@@ -10,7 +10,7 @@ const RENOMEAR = { 'VRL Blindados': 'VRZ Blindados' }; // nomes antigos de empre
 
 /* ---------- dados ---------- */
 function defaultData() {
-  return { version: 2, entries: [], quinzenas: {}, descontos: {}, settings: { operador: 'Ricardo Ribeiro', setorOperador: 'Tapeçaria', lastBackup: null, valorPadrao: { 'Concept Blindados': 510 } } };
+  return { version: 2, entries: [], quinzenas: {}, descontos: {}, settings: { operador: 'Ricardo Ribeiro', setorOperador: 'Tapeçaria', lastBackup: null, valorPadrao: { 'Concept Blindados': 510 }, aliquota: {} } };
 }
 let DB = load();
 if (localStorage.getItem(KEY) && /VRL Blindados/.test(localStorage.getItem(KEY))) save();
@@ -34,6 +34,7 @@ function normalize(d) {
   out.entries.forEach(e => { if (e.ajudante === undefined) e.ajudante = null; });
   out.settings = Object.assign(defaultData().settings, out.settings || {});
   if (!out.settings.valorPadrao || typeof out.settings.valorPadrao !== 'object') out.settings.valorPadrao = {};
+  if (!out.settings.aliquota || typeof out.settings.aliquota !== 'object') out.settings.aliquota = {};
   if (out.settings.operador === 'Ricardo') out.settings.operador = 'Ricardo Ribeiro';
   if (!SETORES.includes(out.settings.setorOperador)) out.settings.setorOperador = 'Tapeçaria';
   migrarNomes(out);
@@ -101,19 +102,21 @@ function somaAj(list) { return list.reduce((s, e) => s + (e.ajudante || 0), 0); 
 const r2 = n => Math.round(n * 100) / 100;
 function setDesconto(emp, ano, mes, q, txt) {
   const v = parseValor(txt);
-  if (Number.isNaN(v) || (v != null && v < 0)) { toast('Desconto inválido'); return false; }
+  if (Number.isNaN(v) || (v != null && v < 0)) { toast('Valor de outros descontos inválido'); return false; }
   const k = qKey(emp, ano, mes, q);
   if (v) DB.descontos[k] = v; else delete DB.descontos[k];
-  save(); toast(v ? `Desconto salvo: ${fmtValor(v)}` : 'Desconto removido'); return true;
+  save(); toast(v ? `Outros descontos salvos: ${fmtValor(v)}` : 'Outros descontos removidos'); return true;
 }
 function getDesconto(emp, ano, mes, q) { return DB.descontos[qKey(emp, ano, mes, q)] || 0; }
+function getAliquota(emp) { const a = (DB.settings.aliquota || {})[emp]; return typeof a === 'number' && a > 0 ? a : 0; }
 function totaisQ(emp, ano, mes, q) {
   const list = entradasQuinzena(emp, ano, mes, q);
-  const bruto = r2(soma(list)), ajudante = r2(somaAj(list)), desconto = r2(getDesconto(emp, ano, mes, q));
-  return { list, carros: list.length, bruto, ajudante, desconto, liquido: r2(bruto - ajudante - desconto) };
+  const bruto = r2(soma(list)), ajudante = r2(somaAj(list)), aliquota = getAliquota(emp);
+  const imposto = r2(bruto * aliquota / 100), outros = r2(getDesconto(emp, ano, mes, q)), desconto = r2(imposto + outros);
+  return { list, carros: list.length, bruto, ajudante, aliquota, imposto, outros, desconto, liquido: r2(bruto - ajudante - desconto) };
 }
 function totaisHtml(t) {
-  return `<div class="money"><div><span>Bruto</span><b>${fmtValor(t.bruto)}</b></div><div><span>Ajudante</span><b>${fmtValor(t.ajudante)}</b></div><div><span>Desconto</span><b>${fmtValor(t.desconto)}</b></div><div class="liq"><span>Líquido</span><b>${fmtValor(t.liquido)}</b></div></div>`;
+  return `<div class="money"><div><span>Bruto</span><b>${fmtValor(t.bruto)}</b></div><div><span>Ajudante</span><b>${fmtValor(t.ajudante)}</b></div><div><span>Desconto${t.aliquota ? ` (imposto ${String(t.aliquota).replace('.', ',')}%)` : ''}</span><b>${fmtValor(t.desconto)}</b>${t.outros && t.imposto ? `<small class="hint">imposto ${fmtValor(t.imposto)} + outros ${fmtValor(t.outros)}</small>` : ''}</div><div class="liq"><span>Líquido</span><b>${fmtValor(t.liquido)}</b></div></div>`;
 }
 function diasDesde(iso) { if (!iso) return Infinity; return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000); }
 
@@ -223,9 +226,9 @@ function renderPainel() {
       ${totaisHtml(t)}
       <div class="row2 stop">
         <label>Status<select class="st-sel" data-emp="${esc(emp)}" aria-label="Status da quinzena">${STATUS.map(s => `<option ${s === st ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
-        <label>Desconto (R$)<input type="text" class="desc-in" data-emp="${esc(emp)}" inputmode="decimal" autocomplete="off" spellcheck="false" value="${t.desconto ? valorInput(t.desconto) : ''}" placeholder="0,00"></label>
+        <label>Outros descontos (R$)<input type="text" class="desc-in" data-emp="${esc(emp)}" inputmode="decimal" autocomplete="off" spellcheck="false" value="${t.outros ? valorInput(t.outros) : ''}" placeholder="0,00"></label>
       </div>
-      <p class="hint">Toque no cartão para abrir a folha. Ajudante e desconto não saem na folha.</p>
+      <p class="hint">Toque no cartão para abrir a folha. O imposto é calculado pela alíquota da empresa (aba Empresas). Ajudante e descontos não saem na folha.</p>
     </div>`;
   });
   $('#p-fin').textContent = totFin; $('#p-and').textContent = and.length; $('#p-money').innerHTML = totaisHtml(tot);
@@ -418,7 +421,7 @@ function renderFolha() {
   const semValor = list.filter(e => e.valor == null).length;
   const t = totaisQ(emp, ano, mes, q);
   $('#fo-status').value = getStatus(emp, ano, mes, q);
-  $('#fo-desconto').value = t.desconto ? valorInput(t.desconto) : '';
+  $('#fo-desconto').value = t.outros ? valorInput(t.outros) : '';
   $('#fo-money').innerHTML = totaisHtml(t);
   $('#fo-info').innerHTML = `Período ${fmtData(p.ini)} a ${fmtData(p.fim)}: <b>${list.length}</b> ${list.length === 1 ? 'carro' : 'carros'}, ${paginas} ${paginas === 1 ? 'página' : 'páginas'} A4. Valores, ajudante e desconto aparecem só no app, nunca na folha. Pagamento previsto: <b>${fmtData(dataPagamento(ano, mes, q))}</b>.` +
     (semValor ? ` ${semValor} sem valor.` : '') +
@@ -599,12 +602,19 @@ function renderAjustes() {
   $('#s-operador').value = DB.settings.operador || '';
   fillSelect($('#s-setor-op'), SETORES); $('#s-setor-op').value = DB.settings.setorOperador || 'Tapeçaria';
   $('#s-valores').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}${e === 'Concept Blindados' ? '<br><small class="hint">Na folha, Tapeçaria sai como Forro</small>' : ''}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${valorInput(DB.settings.valorPadrao[e])}" placeholder="sem padrão"></div>`).join('');
+  $('#s-aliquotas').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${getAliquota(e) ? String(getAliquota(e)).replace('.', ',') : ''}" placeholder="0 %"></div>`).join('');
   $('#s-dados-info').textContent = `${DB.entries.length} lançamento(s) salvos neste aparelho.` + (DB.entries.some(e => e.exemplo) ? ' Há dados de exemplo.' : '');
   const lb = DB.settings.lastBackup;
   $('#s-backup-info').innerHTML = lb ? `Último backup: <b>${new Date(lb).toLocaleString('pt-BR')}</b> (há ${diasDesde(lb)} dia(s)).` : 'Nenhum backup feito ainda.';
   if (diasDesde(lb) > 7) $('#s-backup-info').innerHTML += ' <b style="color:var(--warn)">Recomendado fazer um backup agora.</b>';
 }
 $('#btn-salvar-op').onclick = () => { const v = $('#s-operador').value.trim(); if (!v) return toast('Digite o nome do operador'); DB.settings.operador = v; DB.settings.setorOperador = $('#s-setor-op').value || 'Tapeçaria'; save(); renderBrand(); toast('Operador salvo'); };
+$('#btn-salvar-aliq').onclick = () => {
+  const al = {}; let erro = false;
+  document.querySelectorAll('#s-aliquotas input').forEach(i => { const v = parseValor(i.value.replace('%', '')); if (Number.isNaN(v) || (v != null && (v < 0 || v >= 100))) erro = true; else if (v) al[i.dataset.emp] = v; });
+  if (erro) return toast('Alguma alíquota está inválida (use de 0 a 99)');
+  DB.settings.aliquota = al; save(); renderAjustes(); toast('Alíquotas salvas');
+};
 $('#btn-salvar-valores').onclick = () => {
   const vp = {}; let erro = false;
   document.querySelectorAll('#s-valores input').forEach(i => { const v = parseValor(i.value); if (Number.isNaN(v)) erro = true; else if (v != null) vp[i.dataset.emp] = v; });
@@ -672,13 +682,15 @@ function renderRelatorios() {
     if (grp === 'empresa') return [empresa, empresa];
     return [setor, setor];
   };
+  let impTotal = 0;
   const get = (k, label) => (m[k] = m[k] || { label, n: 0, bruto: 0, ajudante: 0, desconto: 0, sv: 0 });
   list.forEach(e => {
     const d = +e.dataTermino.slice(8);
     const [k, label] = grupo(e.empresa, e.dataTermino.slice(0, 7), d <= 15 ? 1 : 2, e.setor);
     const g = get(k, label); g.n++; g.bruto += e.valor || 0; g.ajudante += e.ajudante || 0; if (e.valor == null) g.sv++;
+    const imp = (e.valor || 0) * getAliquota(e.empresa) / 100; g.desconto += imp; impTotal += imp;
   });
-  let descTotal = 0;
+  let descTotal = impTotal;
   Object.entries(DB.descontos).forEach(([key, v]) => {
     const [empresa, ym, qq] = key.split('|');
     if (emp && empresa !== emp) return;
@@ -696,9 +708,9 @@ function renderRelatorios() {
   const tb = soma(list), ta = somaAj(list);
   $('#r-resumo').innerHTML = `${list.length} ${list.length === 1 ? 'carro finalizado' : 'carros finalizados'}` + totaisHtml({ bruto: r2(tb), ajudante: r2(ta), desconto: r2(descTotal), liquido: r2(tb - ta - descTotal) });
   $('#r-out').innerHTML = keys.length ? `<div class="card">${keys.map(k => { const g = m[k]; return `<div class="rel-row"><div class="h"><span>${esc(g.label)}</span><span>${fmtValor(liq(g))}</span></div>
-    <div class="s">${g.n} ${g.n === 1 ? 'carro' : 'carros'} · bruto ${fmtValor(g.bruto)} · ajudante ${fmtValor(g.ajudante)}${grp === 'setor' ? '' : ` · desconto ${fmtValor(g.desconto)}`}${g.sv ? ` · ${g.sv} sem valor` : ''}</div>
+    <div class="s">${g.n} ${g.n === 1 ? 'carro' : 'carros'} · bruto ${fmtValor(g.bruto)} · ajudante ${fmtValor(g.ajudante)} · desconto ${fmtValor(g.desconto)}${g.sv ? ` · ${g.sv} sem valor` : ''}</div>
     <div class="bar"><i style="width:${Math.round(g.bruto / max * 100)}%"></i></div></div>`; }).join('')}</div>` +
-    (grp === 'setor' ? '<p class="hint">Por setor, o valor da direita é bruto menos ajudante (o desconto é por empresa e quinzena e entra só no total acima).</p>' : '<p class="hint">Valor da direita: líquido (bruto menos ajudante menos desconto).</p>')
+    (grp === 'setor' ? '<p class="hint">Por setor, o desconto mostrado é só o imposto. Outros descontos são por empresa e quinzena e entram só no total acima.</p>' : '<p class="hint">Valor da direita: líquido (bruto menos ajudante menos imposto e outros descontos).</p>')
     : '<p class="empty">Ainda não há carros finalizados. Use Lançar ou Carregar exemplo em Empresas.</p>';
 }
 
