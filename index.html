@@ -48,6 +48,7 @@
       <h2>Em andamento <span class="badge" id="p-and-count">0</span></h2>
       <div id="p-andamento"></div>
     </div>
+    <button type="button" class="btn ghost big relmes-btn" id="p-relmes">Relatório do mês (tempo por carro)</button>
     <div id="p-alertas"></div>
     <div class="card">
       <h2>Últimos lançamentos</h2>
@@ -62,17 +63,29 @@
       <input type="hidden" id="f-id">
       <label>Empresa<select id="f-empresa" required></select></label>
       <label>Setor<select id="f-setor" required></select></label>
-      <label>Data início
-        <div class="inline"><input type="date" id="f-inicio" autocomplete="off" required><button type="button" class="btn ghost small" id="btn-hoje">Hoje</button></div>
+      <div class="dt-row">
+        <label>Data início<input type="date" id="f-inicio" autocomplete="off" required></label>
+        <label>Hora início<input type="time" id="f-hora-inicio" autocomplete="off"></label>
+        <button type="button" class="btn ghost small agora" id="btn-agora-ini" aria-label="Preencher data e hora início com agora">Agora</button>
+      </div>
+      <div class="dt-help"><button type="button" class="btn ghost small" id="btn-hoje">Só a data de hoje</button><small class="hint">A hora é opcional.</small></div>
+      <label>OS
+        <div class="inline"><input type="text" id="f-os" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" name="os-nao-preencher" required><button type="button" class="btn ghost small qr-btn" id="btn-ler-qr" aria-label="Ler o QR code da OS com a câmera"><span aria-hidden="true">📷</span> Ler QR</button></div>
       </label>
-      <label>OS<input type="text" id="f-os" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" name="os-nao-preencher" required></label>
       <label>Veículo<input type="text" id="f-veiculo" autocomplete="off" autocorrect="off" spellcheck="false" name="veiculo-nao-preencher" required></label>
       <label>Valor (R$)
         <div class="inline"><input type="text" id="f-valor" autocomplete="off" inputmode="decimal" spellcheck="false" name="valor-nao-preencher" placeholder="0,00"><button type="button" class="btn ghost small" id="btn-valor-padrao" disabled>Usar valor padrão</button></div>
         <small class="hint" id="f-valor-hint"></small>
       </label>
       <label>Ajudante (R$)<input type="text" id="f-ajudante" autocomplete="off" inputmode="decimal" spellcheck="false" name="ajudante-nao-preencher" placeholder="0,00"><small class="hint">Opcional: quanto você pagou ao ajudante neste carro. Não sai na folha.</small></label>
-      <label id="lbl-termino" class="hidden">Data término<input type="date" id="f-termino" autocomplete="off"><small class="hint">Deixe vazio para manter o serviço em andamento.</small></label>
+      <div id="lbl-termino" class="hidden">
+        <div class="dt-row">
+          <label>Data término<input type="date" id="f-termino" autocomplete="off"></label>
+          <label>Hora término<input type="time" id="f-hora-termino" autocomplete="off"></label>
+          <button type="button" class="btn ghost small agora" id="btn-agora-fim" aria-label="Preencher data e hora término com agora">Agora</button>
+        </div>
+        <small class="hint">Deixe a data vazia para manter o serviço em andamento. A hora é opcional.</small>
+      </div>
       <label>Observação<textarea id="f-obs" rows="2" autocomplete="off" spellcheck="false" name="obs-nao-preencher"></textarea></label>
       <div class="actions">
         <button type="submit" class="btn primary big" id="btn-salvar">Salvar lançamento</button>
@@ -87,13 +100,13 @@
       <h2>Filtros</h2>
       <div class="row2">
         <label>Empresa<select id="l-empresa"></select></label>
-        <label>Status<select id="l-status"><option value="">Todos</option><option value="andamento">Em andamento</option><option value="finalizado">Finalizado</option><option value="semvalor">Sem valor</option></select></label>
+        <label>Filtrar por<select id="l-status"><option value="">Todos</option><option value="andamento">Em andamento</option><option value="finalizado">Finalizado</option><option value="semvalor">Sem valor</option></select></label>
       </div>
       <div class="row2">
         <label>De<input type="date" id="l-de" autocomplete="off"></label>
         <label>Até<input type="date" id="l-ate" autocomplete="off"></label>
       </div>
-      <p class="hint">O período usa a data término dos finalizados e a data início dos que estão em andamento.</p>
+      <p class="hint">O período usa a data término dos finalizados e a data início dos que estão em andamento. Em "Filtrar por" dá para escolher a situação do carro.</p>
       <button type="button" class="btn ghost small" id="l-limpar">Limpar filtros</button>
     </div>
     <p class="summary" id="l-resumo"></p>
@@ -171,12 +184,17 @@
     </div>
     <div class="card">
       <h2>Sobre</h2>
-      <p class="hint">Folha Zero versão 1. Os dados ficam salvos somente neste aparelho. Faça backup com frequência.</p>
+      <p class="hint">Folha Zero versão 15. Os dados ficam salvos somente neste aparelho. Faça backup com frequência.</p>
     </div>
   </section>
 
   <!-- RELATÓRIOS -->
   <section id="view-relatorios" class="view">
+    <div class="seg" role="tablist">
+      <button type="button" id="r-tab-valores" class="active" role="tab" aria-selected="true">Valores</button>
+      <button type="button" id="r-tab-mes" role="tab" aria-selected="false">Relatório do mês</button>
+    </div>
+    <div id="r-sec-valores">
     <div class="card">
       <h2>Relatórios</h2>
       <label>Agrupar por<select id="r-grp"><option value="quinzena">Quinzena</option><option value="mes">Mês</option><option value="empresa">Empresa</option><option value="setor">Setor</option></select></label>
@@ -185,6 +203,20 @@
     </div>
     <div class="summary" id="r-resumo"></div>
     <div id="r-out"></div>
+    </div>
+    <div id="r-sec-mes" class="hidden">
+      <div class="card">
+        <h2>Relatório do mês</h2>
+        <div class="row2">
+          <label>Mês<select id="rm-mes"></select></label>
+          <label>Ano<select id="rm-ano"></select></label>
+        </div>
+        <label>Empresa<select id="rm-empresa"></select></label>
+        <p class="hint">Carros finalizados no mês pela data término. Tempo de cada carro = data término menos data início (com as horas, quando preenchidas).</p>
+        <button type="button" class="btn primary big" id="rm-pdf">Baixar relatório em PDF</button>
+      </div>
+      <div id="rm-out"></div>
+    </div>
   </section>
 </main>
 <div id="print-all"></div>
@@ -205,7 +237,19 @@
     <div class="actions" id="m-actions"></div>
   </div>
 </div>
+<div id="qr-modal" class="qr-modal hidden no-print" role="dialog" aria-modal="true" aria-label="Ler QR code da OS">
+  <video id="qr-video" playsinline muted autoplay></video>
+  <div class="qr-frame" aria-hidden="true"></div>
+  <div class="qr-panel">
+    <p id="qr-msg">Aponte a câmera para o QR code da ficha do veículo.</p>
+    <div class="actions">
+      <button type="button" class="btn ghost big hidden" id="qr-digitar">Digitar a OS</button>
+      <button type="button" class="btn danger big" id="qr-cancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
 <div id="toast" class="toast hidden no-print"></div>
+<button type="button" id="upd-banner" class="upd-banner hidden no-print">Nova versão pronta, toque para atualizar</button>
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="app.js"></script>
 </body>

@@ -2,7 +2,14 @@
 /* Folha Zero v1: controle de produção (tapeçaria) */
 const EMPRESAS = ['Concept Blindados', 'VRZ Blindados', 'Carbon Blindados', 'Bullet Blindados', 'Collet Blindados', 'EB Blindados', 'Marc Blindagem'];
 const SETORES = ['Desmontagem', 'Manta', 'Aço', 'Overlap', 'Tampa', 'Vidro', 'Montagem', 'Tapeçaria', 'Aço de retrovisor', 'Churrasqueira', 'Steel', 'Aço Maçaneta', 'Qualidade'];
-const STATUS = ['Aberta', 'Entregue', 'Assinada', 'Paga'];
+const STATUS = ['Aberta', 'Entregue', 'Assinada', 'Paga']; // status da quinzena (por empresa)
+/* Situação do carro (por lançamento), diferente do status da quinzena */
+const SITUACOES = ['Em processo', 'Aguardando equipe', 'Faltando peça', 'Faltando vidro', 'Problema elétrico', 'Aguardando ajuste', 'Pronto, aguardando outro setor', 'Finalizado'];
+const SIT_CLS = ['processo', 'equipe', 'peca', 'vidro', 'eletrico', 'ajuste', 'pronto', 'fin'];
+const SIT_INICIAL = 'Em processo', SIT_FIN = 'Finalizado', SIT_PRONTO = 'Pronto, aguardando outro setor';
+const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const APP_VERSAO = 15;
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const LINHAS_POR_PAGINA = 16;
 const KEY = 'folhazero_v1';
@@ -33,7 +40,8 @@ function normalize(d) {
   out.entries = Array.isArray(out.entries) ? out.entries : [];
   out.quinzenas = out.quinzenas && typeof out.quinzenas === 'object' ? out.quinzenas : {};
   out.descontos = out.descontos && typeof out.descontos === 'object' ? out.descontos : {};
-  out.entries.forEach(e => { if (e.ajudante === undefined) e.ajudante = null; });
+  out.entries = out.entries.filter(e => e && typeof e === 'object');
+  out.entries.forEach(normEntry);
   out.settings = Object.assign(defaultData().settings, out.settings || {});
   if (!out.settings.valorPadrao || typeof out.settings.valorPadrao !== 'object') out.settings.valorPadrao = {};
   if (!out.settings.aliquota || typeof out.settings.aliquota !== 'object') out.settings.aliquota = {};
@@ -41,6 +49,16 @@ function normalize(d) {
   if (!SETORES.includes(out.settings.setorOperador)) out.settings.setorOperador = 'Tapeçaria';
   migrarNomes(out);
   return out;
+}
+/* v15: hora início/término (opcionais) e situação do carro. Dados antigos não têm esses campos:
+   finalizado vira 'Finalizado', em andamento vira 'Em processo'. Nada é pedido de novo ao usuário. */
+function normEntry(e) {
+  if (e.ajudante === undefined) e.ajudante = null;
+  e.horaInicio = typeof e.horaInicio === 'string' && HM_RE.test(e.horaInicio) ? e.horaInicio : null;
+  e.horaTermino = e.dataTermino && typeof e.horaTermino === 'string' && HM_RE.test(e.horaTermino) ? e.horaTermino : null;
+  if (e.dataTermino) e.situacao = SIT_FIN;
+  else if (!SITUACOES.includes(e.situacao) || e.situacao === SIT_FIN) e.situacao = SIT_INICIAL;
+  return e;
 }
 /* migração de nomes antigos de empresas (dados salvos e backups importados) */
 function migrarNomes(d) {
@@ -60,7 +78,7 @@ function migrarNomes(d) {
   Object.keys(vp).forEach(k => { if (RENOMEAR[k]) { if (!(RENOMEAR[k] in vp)) vp[RENOMEAR[k]] = vp[k]; delete vp[k]; mudou = true; } });
   return mudou;
 }
-function save() { localStorage.setItem(KEY, JSON.stringify(DB)); }
+function save() { DB.entries.forEach(normEntry); localStorage.setItem(KEY, JSON.stringify(DB)); }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
 /* ---------- utilidades ---------- */
@@ -68,6 +86,29 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const pad = n => String(n).padStart(2, '0');
 function hojeISO() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function agoraHM() { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function fmtDataHora(iso, hm) { return fmtData(iso) + (iso && hm ? ' ' + hm : ''); }
+function isoUTC(iso) { const [y, m, d] = iso.split('-').map(Number); return Date.UTC(y, m - 1, d); }
+function diffDias(a, b) { return Math.round((isoUTC(b) - isoUTC(a)) / 86400000); }
+const hmMin = hm => +hm.slice(0, 2) * 60 + +hm.slice(3, 5);
+/* tempo na linha (como na planilha Produção: término menos início; em aberto: hoje menos início).
+   Com hora início e hora término, conta em horas; sem horas, em dias. */
+function duracao(e) {
+  const fim = e.dataTermino || hojeISO(), dias = Math.max(0, diffDias(e.dataInicio, fim));
+  if (e.dataTermino && e.horaInicio && e.horaTermino) { const m = dias * 1440 + hmMin(e.horaTermino) - hmMin(e.horaInicio); if (m >= 0) return { min: m, horas: true }; }
+  return { min: dias * 1440, horas: false };
+}
+const plDias = n => n === 1 ? '1 dia' : `${n} dias`;
+function fmtDur(d) {
+  if (!d.horas) { const n = Math.round(d.min / 1440); return n === 0 ? 'mesmo dia' : plDias(n); }
+  const dd = Math.floor(d.min / 1440), h = Math.floor((d.min % 1440) / 60), mi = Math.round(d.min % 60);
+  if (dd) return plDias(dd) + (h ? ` ${h} h` : '');
+  if (h) return `${h} h` + (mi ? ` ${mi} min` : '');
+  return `${mi} min`;
+}
+function fmtDiasDec(min) { const n = min / 1440; return `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${Math.round(n * 10) === 10 ? 'dia' : 'dias'}`; }
+function sitCls(s) { const i = SITUACOES.indexOf(s); return 'sit sit-' + (SIT_CLS[i] || 'processo'); }
+function sitChip(s) { return `<span class="chip ${sitCls(s)}">${esc(s)}</span>`; }
 function fmtData(iso) { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; }
 function fmtValor(v) { return (v == null || isNaN(v)) ? 'sem valor' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
 function valorInput(v) { return v == null ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -173,13 +214,14 @@ document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => { if 
 function currentView() { const v = document.querySelector('.view.active'); return v ? v.id.replace('view-', '') : 'painel'; }
 function renderBrand() { const b = document.getElementById('brand-sub'); if (b) b.textContent = DB.settings.operador ? `${DB.settings.operador} · ${DB.settings.setorOperador || 'Tapeçaria'}` : 'Cadastre seu nome na aba Empresas'; }
 function render(view = currentView()) {
+  DB.entries.forEach(normEntry);
   renderBrand();
   if (view === 'painel') renderPainel();
   if (view === 'lista') renderLista();
   if (view === 'folha') renderFolha();
   if (view === 'ajustes') renderAjustes();
   if (view === 'lancar') atualizaValorPadraoBtn();
-  if (view === 'relatorios') renderRelatorios();
+  if (view === 'relatorios') { if (RSUB === 'mes') renderRelMes(); else renderRelatorios(); }
 }
 
 /* ---------- selects ---------- */
@@ -200,6 +242,10 @@ fillSelect($('#l-empresa'), EMPRESAS, 'Todas');
 fillSelect($('#fo-empresa'), EMPRESAS);
 fillSelect($('#r-empresa'), EMPRESAS, 'Todas as empresas');
 fillSelect($('#fo-status'), STATUS);
+$('#l-status').insertAdjacentHTML('beforeend', `<optgroup label="Situação do carro">${SITUACOES.map(s => `<option value="sit:${esc(s)}">${esc(s)}</option>`).join('')}</optgroup>`);
+fillSelect($('#rm-empresa'), EMPRESAS, 'Todas as empresas');
+(() => { const d = new Date(), y = d.getFullYear(); $('#rm-mes').innerHTML = MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+  let a = ''; for (let x = y - 2; x <= y + 1; x++) a += `<option value="${x}">${x}</option>`; $('#rm-ano').innerHTML = a; $('#rm-mes').value = d.getMonth() + 1; $('#rm-ano').value = y; })();
 fillMesAno($('#fo-mes'), $('#fo-ano'), $('#fo-q'));
 const _d0 = new Date();
 let VER_TODAS = false;
@@ -212,6 +258,18 @@ $('#p-next').onclick = () => { PQ = qShift(PQ, 1); renderPainel(); };
 $('#p-atual').onclick = () => { PQ = qAtual(); renderPainel(); };
 $('#p-lancar').onclick = () => { if (bloqueadoNovo()) return; resetForm(); show('lancar'); };
 ['#r-grp', '#r-empresa'].forEach(s => $(s).onchange = renderRelatorios);
+['#rm-mes', '#rm-ano', '#rm-empresa'].forEach(s => $(s).onchange = renderRelMes);
+let RSUB = 'valores';
+function relSub(sub) {
+  RSUB = sub;
+  $('#r-sec-valores').classList.toggle('hidden', sub !== 'valores'); $('#r-sec-mes').classList.toggle('hidden', sub !== 'mes');
+  $('#r-tab-valores').classList.toggle('active', sub === 'valores'); $('#r-tab-mes').classList.toggle('active', sub === 'mes');
+  $('#r-tab-valores').setAttribute('aria-selected', sub === 'valores'); $('#r-tab-mes').setAttribute('aria-selected', sub === 'mes');
+  if (sub === 'mes') renderRelMes(); else renderRelatorios();
+}
+$('#r-tab-valores').onclick = () => relSub('valores');
+$('#r-tab-mes').onclick = () => relSub('mes');
+$('#p-relmes').onclick = () => { show('relatorios'); relSub('mes'); };
 $('#fo-status').onchange = () => { DB.quinzenas[qKey($('#fo-empresa').value, +$('#fo-ano').value, +$('#fo-mes').value, +$('#fo-q').value)] = $('#fo-status').value; save(); renderFolha(); toast('Status alterado para ' + $('#fo-status').value); };
 ['#fo-empresa', '#fo-mes', '#fo-ano', '#fo-q'].forEach(s => $(s).onchange = renderFolha);
 ['#l-empresa', '#l-status', '#l-de', '#l-ate'].forEach(s => $(s).onchange = renderLista);
@@ -219,6 +277,7 @@ $('#l-limpar').onclick = () => { ['#l-empresa', '#l-status', '#l-de', '#l-ate'].
 
 /* ---------- painel ---------- */
 function renderPainel() {
+  DB.entries.forEach(normEntry);
   const { ano, mes, q } = PQ;
   const at = qAtual();
   $('#p-titulo').textContent = qNome(PQ);
@@ -268,8 +327,9 @@ function renderPainel() {
     $('#fo-empresa').value = c.dataset.emp; $('#fo-mes').value = mes; $('#fo-ano').value = ano; $('#fo-q').value = q; show('folha');
   });
   $('#p-and-count').textContent = and.length;
-  $('#p-andamento').innerHTML = and.length ? and.map(e => `<div class="mini" data-id="${e.id}"><div><div class="t">OS ${esc(e.os)} · ${esc(e.veiculo)}</div><div class="s">${esc(e.empresa)} · ${esc(e.setor)} · início ${fmtData(e.dataInicio)}</div></div><button type="button" class="btn ok small act-fin">Finalizar</button></div>`).join('') : '<p class="empty">Nenhum carro em andamento.</p>';
-  $('#p-andamento').querySelectorAll('.mini').forEach(m => m.querySelector('.act-fin').onclick = () => finalizar(m.dataset.id));
+  $('#p-andamento').innerHTML = and.length ? and.map(e => { const d = diffDias(e.dataInicio, hojeISO()); return `<div class="mini${e.situacao === SIT_PRONTO ? ' is-pronto' : ''}" data-id="${e.id}"><div><div class="t">OS ${esc(e.os)} · ${esc(e.veiculo)}</div><div class="s">${esc(e.empresa)} · ${esc(e.setor)} · início ${fmtDataHora(e.dataInicio, e.horaInicio)} · ${d <= 0 ? 'desde hoje' : `há ${plDias(d)}`}</div>
+    <button type="button" class="chip-btn act-sit" aria-label="Mudar situação do carro OS ${esc(e.os)}">${sitChip(e.situacao)}<span class="chev">▾</span></button></div><button type="button" class="btn ok small act-fin">Finalizar</button></div>`; }).join('') : '<p class="empty">Nenhum carro em andamento.</p>';
+  $('#p-andamento').querySelectorAll('.mini').forEach(m => { m.querySelector('.act-fin').onclick = () => finalizar(m.dataset.id); m.querySelector('.act-sit').onclick = () => mudarSituacao(m.dataset.id); });
   renderAlertas();
   const ult = DB.entries.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5);
   $('#p-ultimos').innerHTML = ult.length ? ult.map(e => `<div class="mini"><div><div class="t">OS ${esc(e.os)} · ${esc(e.veiculo)}</div><div class="s">${esc(e.empresa)} · ${esc(e.setor)} · ${e.dataTermino ? 'término ' + fmtData(e.dataTermino) : 'em andamento'}</div></div><div class="s">${fmtValor(e.valor)}${e.ajudante ? `<br>aj. ${fmtValor(e.ajudante)}` : ''}</div></div>`).join('') : '<p class="empty">Nenhum lançamento ainda. Toque em "Lançar carro".</p>';
@@ -295,12 +355,14 @@ function renderAlertas() {
 /* ---------- lista ---------- */
 function entryHtml(e) {
   const fin = !!e.dataTermino;
-  return `<div class="entry" data-id="${e.id}">
+  return `<div class="entry${e.situacao === SIT_PRONTO ? ' is-pronto' : ''}" data-id="${e.id}">
     <div class="top"><div><div class="os">OS ${esc(e.os)}</div><div>${esc(e.veiculo)}</div></div>
-      <span class="chip ${fin ? 'fin' : 'and'}">${fin ? 'Finalizado' : 'Em andamento'}</span></div>
+      ${sitChip(e.situacao)}</div>
     <div class="meta">${esc(e.empresa)} · ${esc(e.setor)}<br>
-      Início: ${fmtData(e.dataInicio)}${fin ? ` · Término: ${fmtData(e.dataTermino)}` : ''}<br>
+      Início: ${fmtDataHora(e.dataInicio, e.horaInicio)}${fin ? ` · Término: ${fmtDataHora(e.dataTermino, e.horaTermino)}` : ''}<br>
+      ${fin ? `Tempo: ${fmtDur(duracao(e))}` : `Aberto há ${plDias(Math.max(0, diffDias(e.dataInicio, hojeISO())))}`}<br>
       Valor: <b>${fmtValor(e.valor)}</b>${e.ajudante ? ` · Ajudante: ${fmtValor(e.ajudante)}` : ''}${e.obs ? `<br>Obs.: ${esc(e.obs)}` : ''}</div>
+    ${fin ? '' : `<label class="sit-lbl">Situação do carro<select class="sit-sel" aria-label="Situação do carro OS ${esc(e.os)}">${SITUACOES.map(s => `<option value="${esc(s)}" ${s === e.situacao ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></label>`}
     <div class="btns">
       ${fin ? '' : '<button type="button" class="btn ok small act-fin">Finalizar</button>'}
       <button type="button" class="btn ghost small act-edit">Editar</button>
@@ -311,6 +373,7 @@ function bindEntryButtons(root) {
   root.querySelectorAll('.entry').forEach(card => {
     const id = card.dataset.id;
     const f = card.querySelector('.act-fin'); if (f) f.onclick = () => finalizar(id);
+    const ss = card.querySelector('.sit-sel'); if (ss) ss.onchange = () => setSituacao(id, ss.value);
     card.querySelector('.act-edit').onclick = () => editar(id);
     card.querySelector('.act-del').onclick = () => excluir(id);
   });
@@ -322,6 +385,7 @@ function renderLista() {
     if (st === 'andamento' && e.dataTermino) return false;
     if (st === 'finalizado' && !e.dataTermino) return false;
     if (st === 'semvalor' && e.valor != null) return false;
+    if (st.startsWith('sit:') && e.situacao !== st.slice(4)) return false;
     const ref = e.dataTermino || e.dataInicio;
     if (de && ref < de) return false;
     if (ate && ref > ate) return false;
@@ -336,15 +400,33 @@ async function finalizar(id) {
   const e = DB.entries.find(x => x.id === id); if (!e) return;
   const val = await modal('Finalizar serviço',
     `<p><b>OS ${esc(e.os)}</b> · ${esc(e.veiculo)}<br>${esc(e.empresa)} · ${esc(e.setor)}</p>
-     <label>Data término<input type="date" id="m-termino" autocomplete="off" value="${hojeISO()}"></label>
-     <p class="hint">A folha quinzenal usa esta data.</p>`,
+     <p class="hint">Início: ${fmtDataHora(e.dataInicio, e.horaInicio)}</p>
+     <div class="dt-row"><label>Data término<input type="date" id="m-termino" autocomplete="off" value="${hojeISO()}"></label>
+       <label>Hora término<input type="time" id="m-hora-termino" autocomplete="off" value="${agoraHM()}"></label>
+       <button type="button" class="btn ghost small agora" id="m-agora">Agora</button></div>
+     <p class="hint">A folha quinzenal usa a data término. A hora é opcional (pode apagar).</p>`,
     [{ label: 'Finalizar', cls: 'ok', value: 'ok', validate: () => {
-        const v = $('#m-termino').value; if (!v) { toast('Informe a data término'); return false; }
-        if (v < e.dataInicio) { toast('A data término não pode ser antes da data início'); return false; } return true; },
-       collect: () => $('#m-termino').value },
-     { label: 'Cancelar', value: null }]);
-  if (!val) return;
-  e.dataTermino = val; e.updatedAt = Date.now(); save(); render(); toast('Serviço finalizado');
+        const v = $('#m-termino').value, h = $('#m-hora-termino').value; if (!v) { toast('Informe a data término'); return false; }
+        if (v < e.dataInicio) { toast('A data término não pode ser antes da data início'); return false; }
+        if (v === e.dataInicio && h && e.horaInicio && h < e.horaInicio) { toast('A hora término não pode ser antes da hora início'); return false; } return true; },
+       collect: () => ({ data: $('#m-termino').value, hora: $('#m-hora-termino').value || null }) },
+     { label: 'Cancelar', value: null }], () => { $('#m-agora').onclick = () => { $('#m-termino').value = hojeISO(); $('#m-hora-termino').value = agoraHM(); }; });
+  if (!val) return false;
+  e.dataTermino = val.data; e.horaTermino = HM_RE.test(val.hora || '') ? val.hora : null; e.situacao = SIT_FIN; e.updatedAt = Date.now(); save(); render(); toast('Serviço finalizado');
+  return true;
+}
+/* troca rápida da situação do carro (não mexe no status da quinzena) */
+async function setSituacao(id, sit) {
+  const e = DB.entries.find(x => x.id === id); if (!e || !SITUACOES.includes(sit)) return;
+  if (sit === SIT_FIN) { if (!e.dataTermino) { await finalizar(id); render(); } return; }
+  if (e.dataTermino) return; // finalizado: para reabrir, use Editar e apague a data término
+  e.situacao = sit; e.updatedAt = Date.now(); save(); render(); toast('Situação: ' + sit);
+}
+async function mudarSituacao(id) {
+  const e = DB.entries.find(x => x.id === id); if (!e) return;
+  const v = await modal('Situação do carro', `<p><b>OS ${esc(e.os)}</b> · ${esc(e.veiculo)}<br>${esc(e.empresa)} · ${esc(e.setor)}</p><p class="hint">Escolha a situação atual. "Finalizado" pede a data término.</p>`,
+    SITUACOES.map(s => ({ label: s, value: s, cls: 'sit-opt ' + sitCls(s) + (s === e.situacao ? ' atual' : '') })).concat([{ label: 'Cancelar', value: null }]));
+  if (v) setSituacao(id, v);
 }
 async function excluir(id) {
   const e = DB.entries.find(x => x.id === id); if (!e) return;
@@ -356,6 +438,8 @@ async function excluir(id) {
 /* ---------- formulário ---------- */
 const form = $('#form-lanc');
 $('#btn-hoje').onclick = () => { $('#f-inicio').value = hojeISO(); };
+$('#btn-agora-ini').onclick = () => { $('#f-inicio').value = hojeISO(); $('#f-hora-inicio').value = agoraHM(); };
+$('#btn-agora-fim').onclick = () => { $('#f-termino').value = hojeISO(); $('#f-hora-termino').value = agoraHM(); };
 $('#f-empresa').onchange = atualizaValorPadraoBtn;
 function atualizaValorPadraoBtn() {
   const emp = $('#f-empresa').value; const vp = DB.settings.valorPadrao[emp];
@@ -380,6 +464,7 @@ function editar(id) {
   $('#f-id').value = e.id; $('#f-empresa').value = e.empresa; $('#f-setor').value = e.setor;
   $('#f-inicio').value = e.dataInicio; $('#f-os').value = e.os; $('#f-veiculo').value = e.veiculo;
   $('#f-valor').value = valorInput(e.valor); $('#f-ajudante').value = valorInput(e.ajudante); $('#f-termino').value = e.dataTermino || ''; $('#f-obs').value = e.obs || '';
+  $('#f-hora-inicio').value = e.horaInicio || ''; $('#f-hora-termino').value = e.horaTermino || '';
   $('#form-title').textContent = 'Editar lançamento'; $('#btn-salvar').textContent = 'Salvar alterações';
   $('#lbl-termino').classList.remove('hidden'); $('#btn-cancelar-edicao').classList.remove('hidden');
   atualizaValorPadraoBtn();
@@ -391,8 +476,10 @@ form.onsubmit = async ev => {
   const d = {
     empresa: $('#f-empresa').value, setor: $('#f-setor').value, dataInicio: $('#f-inicio').value,
     os: $('#f-os').value.trim(), veiculo: $('#f-veiculo').value.trim(), obs: $('#f-obs').value.trim(),
-    valor: parseValor($('#f-valor').value), ajudante: parseValor($('#f-ajudante').value), dataTermino: id ? ($('#f-termino').value || null) : undefined
+    valor: parseValor($('#f-valor').value), ajudante: parseValor($('#f-ajudante').value), dataTermino: id ? ($('#f-termino').value || null) : undefined,
+    horaInicio: HM_RE.test($('#f-hora-inicio').value) ? $('#f-hora-inicio').value : null
   };
+  if (id) d.horaTermino = d.dataTermino && HM_RE.test($('#f-hora-termino').value) ? $('#f-hora-termino').value : null;
   const falta = [];
   if (!d.empresa) falta.push('empresa'); if (!d.setor) falta.push('setor'); if (!d.dataInicio) falta.push('data início');
   if (!d.os) falta.push('OS'); if (!d.veiculo) falta.push('veículo');
@@ -404,6 +491,7 @@ form.onsubmit = async ev => {
   }
   if (Number.isNaN(d.valor)) { await modal('Valor inválido', '<p>Digite o valor só com números, por exemplo 510 ou 510,00.</p>', [{ label: 'OK', value: true, cls: 'primary' }]); return; }
   if (d.dataTermino && d.dataTermino < d.dataInicio) { await modal('Datas inválidas', '<p>A data término não pode ser antes da data início.</p>', [{ label: 'OK', value: true, cls: 'primary' }]); return; }
+  if (d.dataTermino && d.dataTermino === d.dataInicio && d.horaInicio && d.horaTermino && d.horaTermino < d.horaInicio) { await modal('Horas inválidas', '<p>No mesmo dia, a hora término não pode ser antes da hora início.</p>', [{ label: 'OK', value: true, cls: 'primary' }]); return; }
   const norm = s => s.replace(/\s+/g, '').toUpperCase();
   const dups = DB.entries.filter(e => e.id !== id && norm(e.os) === norm(d.os));
   if (dups.length) {
@@ -418,14 +506,116 @@ form.onsubmit = async ev => {
   }
   if (id) {
     const e = DB.entries.find(x => x.id === id);
-    Object.assign(e, d, { updatedAt: Date.now() });
+    Object.assign(e, d, { updatedAt: Date.now() }); normEntry(e);
     save(); resetForm(); toast('Alterações salvas'); show('lista');
   } else {
-    DB.entries.push(Object.assign(d, { id: uid(), dataTermino: null, createdAt: Date.now(), updatedAt: Date.now() }));
+    DB.entries.push(Object.assign(d, { id: uid(), dataTermino: null, horaTermino: null, situacao: SIT_INICIAL, createdAt: Date.now(), updatedAt: Date.now() }));
     save(); resetForm(); toast('Lançamento salvo');
     window.scrollTo(0, 0);
   }
 };
+
+/* ---------- leitor de QR da OS ----------
+   A ficha do veículo traz um QR code só com o número da OS (ex.: 260728).
+   Usa o BarcodeDetector do aparelho quando existe (Chrome no Android); senão, o jsQR
+   local (vendor/jsQR.js, carregado só quando precisa). Nada sai do aparelho. */
+let QR = null;
+function osDoQR(txt) {
+  const t = String(txt == null ? '' : txt).trim(), runs = t.match(/\d+/g);
+  if (!runs) return t.slice(0, 40);
+  return runs.reduce((a, b) => b.length > a.length ? b : a);
+}
+function carregarJsQR() {
+  if (window.jsQR) return Promise.resolve(window.jsQR);
+  if (carregarJsQR._p) return carregarJsQR._p;
+  carregarJsQR._p = new Promise((res, rej) => {
+    const sc = document.createElement('script'); sc.src = 'vendor/jsQR.js';
+    sc.onload = () => window.jsQR ? res(window.jsQR) : rej(new Error('jsQR indisponível'));
+    sc.onerror = () => { carregarJsQR._p = null; rej(new Error('jsQR indisponível')); };
+    document.head.appendChild(sc);
+  });
+  return carregarJsQR._p;
+}
+async function criarDetector() {
+  try {
+    if ('BarcodeDetector' in window) {
+      const f = window.BarcodeDetector.getSupportedFormats ? await window.BarcodeDetector.getSupportedFormats() : ['qr_code'];
+      if (f.includes('qr_code')) return new window.BarcodeDetector({ formats: ['qr_code'] });
+    }
+  } catch (_) {}
+  return null;
+}
+/* lê o QR de uma imagem, vídeo ou canvas; devolve o texto ou null */
+async function decodificarQR(fonte, opts = {}) {
+  const det = opts.detector !== undefined ? opts.detector : (opts.forcarJsQR ? null : await criarDetector());
+  if (det) { try { const r = await det.detect(fonte); if (r && r.length && r[0].rawValue) return r[0].rawValue; } catch (_) {} if (!opts.forcarJsQR && opts.soDetector) return null; }
+  const jsQR = await carregarJsQR();
+  const w0 = fonte.videoWidth || fonte.naturalWidth || fonte.width, h0 = fonte.videoHeight || fonte.naturalHeight || fonte.height;
+  if (!w0 || !h0) return null;
+  const k = Math.min(1, (opts.max || 1000) / Math.max(w0, h0)), w = Math.round(w0 * k), h = Math.round(h0 * k);
+  const cv = opts.canvas || document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(fonte, 0, 0, w, h);
+  const code = jsQR(cx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: opts.inversao || 'attemptBoth' });
+  return code && code.data ? code.data : null;
+}
+function qrMsg(txt, erro) { $('#qr-msg').textContent = txt; $('#qr-modal').classList.toggle('erro', !!erro); $('#qr-digitar').classList.toggle('hidden', !erro); }
+function fecharQR() {
+  if (!QR) { $('#qr-modal').classList.add('hidden'); return; }
+  QR.ativo = false; clearTimeout(QR.t);
+  if (QR.stream) QR.stream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+  const v = $('#qr-video'); try { v.pause(); } catch (_) {} v.srcObject = null;
+  QR = null; $('#qr-modal').classList.add('hidden');
+}
+function qrLido(txt) {
+  const os = osDoQR(txt); if (!os) return false;
+  fecharQR();
+  $('#f-os').value = os;
+  try { if (navigator.vibrate) navigator.vibrate(80); } catch (_) {}
+  $('#f-veiculo').focus();
+  toast('OS lida: ' + os);
+  return true;
+}
+function qrErroCamera(e) {
+  const n = e && e.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError') return 'Sem permissão para usar a câmera. Libere a câmera nas configurações do navegador ou digite a OS.';
+  if (n === 'NotFoundError' || n === 'OverconstrainedError' || n === 'DevicesNotFoundError') return 'Nenhuma câmera encontrada neste aparelho. Digite a OS.';
+  if (n === 'NotReadableError' || n === 'AbortError') return 'A câmera está sendo usada por outro app. Feche o outro app e tente de novo, ou digite a OS.';
+  return 'Não foi possível abrir a câmera. Digite a OS.';
+}
+async function abrirQR() {
+  fecharQR();
+  QR = { ativo: true };
+  const sessao = QR;
+  $('#qr-modal').classList.remove('hidden'); qrMsg('Abrindo a câmera...');
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    qrMsg(window.isSecureContext === false ? 'A câmera só funciona com o app aberto pelo endereço seguro (https). Digite a OS.' : 'Este navegador não permite usar a câmera. Digite a OS.', true); return;
+  }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); }
+  catch (e) { if (QR === sessao) qrMsg(qrErroCamera(e), true); return; }
+  if (QR !== sessao || !sessao.ativo) { stream.getTracks().forEach(t => t.stop()); return; }
+  sessao.stream = stream;
+  const v = $('#qr-video'); v.srcObject = stream;
+  try { await v.play(); } catch (_) {}
+  sessao.detector = await criarDetector();
+  if (!sessao.detector) { try { await carregarJsQR(); } catch (e) { if (QR === sessao) qrMsg('Leitor de QR indisponível. Digite a OS.', true); return; } }
+  if (QR !== sessao) return;
+  qrMsg('Aponte a câmera para o QR code da ficha do veículo.');
+  sessao.canvas = document.createElement('canvas');
+  const passo = async () => {
+    if (QR !== sessao || !sessao.ativo) return;
+    let txt = null;
+    if (v.readyState >= 2) { try { txt = await decodificarQR(v, { detector: sessao.detector, canvas: sessao.canvas, max: 640, inversao: 'dontInvert', soDetector: !!sessao.detector }); } catch (_) {} }
+    if (QR !== sessao || !sessao.ativo) return;
+    if (txt && qrLido(txt)) return;
+    sessao.t = setTimeout(passo, 150);
+  };
+  passo();
+}
+$('#btn-ler-qr').onclick = abrirQR;
+$('#qr-cancelar').onclick = fecharQR;
+$('#qr-digitar').onclick = () => { fecharQR(); $('#f-os').focus(); };
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && QR) fecharQR(); });
 
 /* ---------- folha ---------- */
 function folhaDados() {
@@ -735,6 +925,105 @@ function renderRelatorios() {
     : '<p class="empty">Ainda não há carros finalizados. Use Lançar ou Carregar exemplo em Empresas.</p>';
 }
 
+/* ---------- relatório do mês (produtividade) ----------
+   Como a planilha Produção: carros finalizados no mês pela data término, tempo na linha
+   (término menos início), média, maior e menor tempo, dia mais forte e carros parados. */
+function relatorioMes(ano, mes, emp) {
+  DB.entries.forEach(normEntry);
+  const ym = `${ano}-${pad(mes)}`, hoje = hojeISO();
+  const fin = DB.entries.filter(e => e.dataTermino && e.dataTermino.slice(0, 7) === ym && (!emp || e.empresa === emp))
+    .sort((a, b) => (a.dataTermino + (a.horaTermino || '') + a.os).localeCompare(b.dataTermino + (b.horaTermino || '') + b.os))
+    .map(e => ({ e, d: duracao(e) }));
+  const n = fin.length, totalMin = fin.reduce((s, x) => s + x.d.min, 0);
+  const todasComHoras = n > 0 && fin.every(x => x.d.horas);
+  const media = n ? { min: totalMin / n, horas: todasComHoras } : null;
+  let rapido = null, lento = null;
+  fin.forEach(x => { if (!rapido || x.d.min < rapido.d.min) rapido = x; if (!lento || x.d.min > lento.d.min) lento = x; });
+  const semana = [0, 0, 0, 0, 0, 0, 0], porData = {};
+  fin.forEach(x => { semana[new Date(isoUTC(x.e.dataTermino)).getUTCDay()]++; porData[x.e.dataTermino] = (porData[x.e.dataTermino] || 0) + 1; });
+  const maxSem = Math.max(0, ...semana), diasSemanaTop = maxSem ? DIAS_SEMANA.filter((_, i) => semana[i] === maxSem) : [];
+  let melhorData = null; Object.keys(porData).sort().forEach(k => { if (!melhorData || porData[k] > melhorData.n) melhorData = { data: k, n: porData[k] }; });
+  const parados = DB.entries.filter(e => !e.dataTermino && (!emp || e.empresa === emp) && e.dataInicio <= `${ym}-${pad(ultimoDia(ano, mes))}`)
+    .map(e => ({ e, dias: Math.max(0, diffDias(e.dataInicio, hoje)) })).sort((a, b) => b.dias - a.dias || a.e.os.localeCompare(b.e.os));
+  const porSituacao = {}; SITUACOES.forEach(s => porSituacao[s] = 0);
+  porSituacao[SIT_FIN] = n; parados.forEach(x => porSituacao[x.e.situacao]++);
+  return { ano, mes, emp: emp || '', fin, n, media, rapido, lento, semana, diasSemanaTop, maxSem, melhorData, parados, porSituacao,
+    bruto: r2(soma(fin.map(x => x.e))), semValor: fin.filter(x => x.e.valor == null).length, comHoras: fin.filter(x => x.d.horas).length };
+}
+const fmtMedia = m => !m ? 'sem dados' : m.horas ? fmtDur({ min: Math.round(m.min), horas: true }) : fmtDiasDec(m.min);
+const carroTxt = x => `OS ${x.e.os} · ${x.e.veiculo}`;
+function diaSemanaNome(iso) { return DIAS_SEMANA[new Date(isoUTC(iso)).getUTCDay()].toLowerCase(); }
+function renderRelMes() {
+  const R = relatorioMes(+$('#rm-ano').value, +$('#rm-mes').value, $('#rm-empresa').value);
+  const titulo = `${MESES[R.mes - 1]} de ${R.ano}${R.emp ? ' · ' + R.emp : ''}`;
+  let h = `<div class="card"><h2>${esc(titulo)}</h2><div class="nums three">
+    <div class="num"><b id="rm-n">${R.n}</b><span>${R.n === 1 ? 'carro finalizado' : 'carros finalizados'}</span></div>
+    <div class="num"><b id="rm-media">${esc(fmtMedia(R.media))}</b><span>tempo médio por carro</span></div>
+    <div class="num"><b id="rm-abertos">${R.parados.length}</b><span>${R.parados.length === 1 ? 'carro em aberto' : 'carros em aberto'}</span></div></div>
+    <p class="hint">Bruto dos finalizados no mês: <b>${fmtValor(R.bruto)}</b>${R.semValor ? ` (${R.semValor} sem valor)` : ''}. Tempo = data término menos data início; com hora início e hora término o tempo sai em horas (${R.comHoras} de ${R.n}).</p></div>`;
+  if (R.n) {
+    h += `<div class="card"><h2>Maior e menor tempo</h2>
+      <div class="rel-row" id="rm-rapido"><div class="h"><span>Mais rápido</span><span>${esc(fmtDur(R.rapido.d))}</span></div><div class="s">${esc(carroTxt(R.rapido))} · ${esc(R.rapido.e.empresa)} · término ${fmtData(R.rapido.e.dataTermino)}</div></div>
+      <div class="rel-row" id="rm-lento"><div class="h"><span>Mais demorado</span><span>${esc(fmtDur(R.lento.d))}</span></div><div class="s">${esc(carroTxt(R.lento))} · ${esc(R.lento.e.empresa)} · término ${fmtData(R.lento.e.dataTermino)}</div></div></div>`;
+    h += `<div class="card"><h2>Por dia da semana</h2><div id="rm-semana">${[1, 2, 3, 4, 5, 6, 0].map(i => `<div class="wk-row${R.semana[i] && R.semana[i] === R.maxSem ? ' top' : ''}"><span>${DIAS_SEMANA[i]}</span><div class="bar"><i style="width:${R.maxSem ? Math.round(R.semana[i] / R.maxSem * 100) : 0}%"></i></div><b>${R.semana[i]}</b></div>`).join('')}</div>
+      <p class="hint" id="rm-melhor">Dia da semana mais forte: <b>${esc(R.diasSemanaTop.join(', '))}</b> (${R.maxSem} ${R.maxSem === 1 ? 'carro' : 'carros'}). Melhor dia: <b>${fmtData(R.melhorData.data)}</b> (${diaSemanaNome(R.melhorData.data)}), ${R.melhorData.n} ${R.melhorData.n === 1 ? 'carro' : 'carros'}.</p></div>`;
+  }
+  h += `<div class="card"><h2>Situação dos carros</h2><div class="sit-grid" id="rm-situacoes">${SITUACOES.map(s => `<div class="sit-cnt">${sitChip(s)}<b>${R.porSituacao[s]}</b></div>`).join('')}</div>
+    <p class="hint">Finalizado conta os carros finalizados no mês. As outras situações contam os carros ainda em aberto.</p></div>`;
+  h += `<div class="card"><h2>Carros parados <span class="badge">${R.parados.length}</span></h2><div id="rm-parados">${R.parados.length ? R.parados.map(x => `<div class="mini${x.e.situacao === SIT_PRONTO ? ' is-pronto' : ''}"><div><div class="t">${esc(carroTxt(x))}</div><div class="s">${esc(x.e.empresa)} · ${esc(x.e.setor)} · início ${fmtDataHora(x.e.dataInicio, x.e.horaInicio)}</div>${sitChip(x.e.situacao)}</div><div class="dias"><b>${x.dias}</b><span>${x.dias === 1 ? 'dia' : 'dias'}</span></div></div>`).join('') : '<p class="empty">Nenhum carro parado.</p>'}</div></div>`;
+  h += `<div class="card"><h2>Tempo por carro</h2><div id="rm-lista">${R.n ? R.fin.map(x => `<div class="mini"><div><div class="t">${esc(carroTxt(x))}</div><div class="s">${esc(x.e.empresa)} · ${esc(x.e.setor)} · ${fmtDataHora(x.e.dataInicio, x.e.horaInicio)} até ${fmtDataHora(x.e.dataTermino, x.e.horaTermino)}</div></div><div class="s"><b>${esc(fmtDur(x.d))}</b></div></div>`).join('') : '<p class="empty">Nenhum carro finalizado neste mês.</p>'}</div></div>`;
+  $('#rm-out').innerHTML = h;
+}
+function gerarPdfRelatorio() {
+  const R = relatorioMes(+$('#rm-ano').value, +$('#rm-mes').value, $('#rm-empresa').value);
+  const doc = novoDoc();
+  const fit = (t, w) => { let s = String(t == null ? '' : t); while (s && doc.getTextWidth(s) > w - 2) s = s.slice(0, -1); return s; };
+  let y = 0, pg = 1;
+  const cab = () => {
+    doc.setTextColor(0); doc.setDrawColor(0);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text('RELATÓRIO DO MÊS', 10, 18);
+    doc.setFontSize(10); doc.setTextColor(70); doc.text(`${MESES[R.mes - 1].toUpperCase()} DE ${R.ano}`, 200, 18, { align: 'right' });
+    doc.setTextColor(0); doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold'); doc.text('Operador:', 10, 25); doc.text('Empresa:', 120, 25);
+    doc.setFont('helvetica', 'normal'); doc.text(fit(DB.settings.operador, 90), 26, 25); doc.text(fit(R.emp || 'Todas', 64), 135, 25);
+    doc.setLineWidth(0.4); doc.line(10, 28, 200, 28); y = 35;
+  };
+  const rod = () => { doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(70); doc.text(`Folha Zero · gerado em ${fmtData(hojeISO())} ${agoraHM()}`, 10, 287); doc.text(`Página ${pg}`, 200, 287, { align: 'right' }); doc.setTextColor(0); };
+  const precisa = h => { if (y + h > 278) { rod(); doc.addPage(); pg++; cab(); } };
+  const secao = t => { precisa(14); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(t, 10, y); y += 2; doc.setLineWidth(0.2); doc.line(10, y, 200, y); y += 5; };
+  const tabela = (cols, rows) => {
+    const rh = 6.4;
+    const linha = (vals, bold) => { precisa(rh); let x = 10; doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 8 : 9);
+      vals.forEach((v, i) => { doc.setLineWidth(0.3); doc.rect(x, y, cols[i].w, rh); const t = fit(v, cols[i].w); if (cols[i].c) doc.text(t, x + cols[i].w / 2, y + rh / 2 + 1.2, { align: 'center' }); else doc.text(t, x + 1.5, y + rh / 2 + 1.2); x += cols[i].w; }); y += rh; };
+    linha(cols.map(c => c.t), true); rows.forEach(r => linha(r, false)); y += 4;
+  };
+  cab();
+  secao('Resumo');
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  [[`Carros finalizados no mês: ${R.n}`, `Tempo médio por carro: ${fmtMedia(R.media)}`], [`Carros em aberto: ${R.parados.length}`, `Bruto dos finalizados: ${fmtValor(R.bruto)}${R.semValor ? ` (${R.semValor} sem valor)` : ''}`]]
+    .forEach(([a, b]) => { doc.text(a, 10, y); doc.text(b, 105, y); y += 6; });
+  if (R.n) {
+    doc.text(`Mais rápido: ${fmtDur(R.rapido.d)} · ${carroTxt(R.rapido)} · ${R.rapido.e.empresa}`, 10, y); y += 6;
+    doc.text(`Mais demorado: ${fmtDur(R.lento.d)} · ${carroTxt(R.lento)} · ${R.lento.e.empresa}`, 10, y); y += 6;
+    doc.text(`Dia da semana mais forte: ${R.diasSemanaTop.join(', ')} (${R.maxSem} ${R.maxSem === 1 ? 'carro' : 'carros'}) · Melhor dia: ${fmtData(R.melhorData.data)} (${R.melhorData.n} ${R.melhorData.n === 1 ? 'carro' : 'carros'})`, 10, y); y += 8;
+    secao('Carros finalizados por dia da semana');
+    tabela([1, 2, 3, 4, 5, 6, 0].map(i => ({ t: DIAS_SEMANA[i].toUpperCase(), w: 190 / 7, c: true })), [[1, 2, 3, 4, 5, 6, 0].map(i => String(R.semana[i]))]);
+  }
+  secao('Situação dos carros');
+  tabela([{ t: 'SITUAÇÃO', w: 120 }, { t: 'CARROS', w: 30, c: true }], SITUACOES.map(s => [s, String(R.porSituacao[s])]));
+  secao('Carros parados (não finalizados)');
+  if (R.parados.length) tabela([{ t: 'OS', w: 22, c: true }, { t: 'VEÍCULO', w: 42 }, { t: 'EMPRESA', w: 36 }, { t: 'INÍCIO', w: 22, c: true }, { t: 'SITUAÇÃO', w: 50 }, { t: 'DIAS', w: 18, c: true }],
+    R.parados.map(x => [x.e.os, x.e.veiculo, x.e.empresa, fmtData(x.e.dataInicio), x.e.situacao, String(x.dias)]));
+  else { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text('Nenhum carro parado.', 10, y); y += 8; }
+  secao('Tempo por carro');
+  if (R.n) tabela([{ t: 'OS', w: 22, c: true }, { t: 'VEÍCULO', w: 44 }, { t: 'EMPRESA', w: 38 }, { t: 'INÍCIO', w: 29, c: true }, { t: 'TÉRMINO', w: 29, c: true }, { t: 'TEMPO', w: 28, c: true }],
+    R.fin.map(x => [x.e.os, x.e.veiculo, x.e.empresa, fmtDataHora(x.e.dataInicio, x.e.horaInicio), fmtDataHora(x.e.dataTermino, x.e.horaTermino), fmtDur(x.d)]));
+  else { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text('Nenhum carro finalizado neste mês.', 10, y); y += 8; }
+  rod();
+  return { doc, nome: `Relatorio-${R.ano}-${pad(R.mes)}${R.emp ? '-' + R.emp.replace(/\s+/g, '-') : ''}.pdf` };
+}
+$('#rm-pdf').onclick = () => { try { const { doc, nome } = gerarPdfRelatorio(); baixarDoc(doc, nome); } catch (e) { console.error(e); toast('Não foi possível gerar o PDF'); } };
+
 /* ---------- exemplo e limpar ---------- */
 function addDias(iso, n) { const [y, m, d] = iso.split('-').map(Number); const t = new Date(y, m - 1, d + n); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`; }
 function dadosExemplo() {
@@ -754,7 +1043,9 @@ function dadosExemplo() {
         const inicio = addDias(termino, -(1 + seq % 3));
         const aberto = qi === 2 && i === 0;
         entries.push({ id: uid(), empresa: emp, setor: ei === 0 ? 'Tapeçaria' : SETORES[(seq * 3 + ei) % SETORES.length], dataInicio: inicio, dataTermino: aberto ? null : termino,
-          os: String(os++), veiculo: veic[seq % veic.length], valor: seq % 11 === 0 ? null : (ei === 0 ? 510 : 300 + (seq % 5) * 40), ajudante: seq % 4 === 0 ? 80 : null, obs: seq % 6 === 0 ? 'dados de exemplo' : '', exemplo: true, createdAt: Date.now() - (200 - seq) * 60000, updatedAt: Date.now() });
+          os: String(os++), veiculo: veic[seq % veic.length], valor: seq % 11 === 0 ? null : (ei === 0 ? 510 : 300 + (seq % 5) * 40), ajudante: seq % 4 === 0 ? 80 : null, obs: seq % 6 === 0 ? 'dados de exemplo' : '', exemplo: true, createdAt: Date.now() - (200 - seq) * 60000, updatedAt: Date.now(),
+          horaInicio: seq % 2 ? `${pad(7 + seq % 3)}:${seq % 4 ? '00' : '30'}` : null, horaTermino: !aberto && seq % 2 ? `${pad(13 + seq % 5)}:00` : null,
+          situacao: aberto ? SITUACOES[ei % 7] : SIT_FIN });
       }
       quinzenas[qKey(emp, qs[0].ano, qs[0].mes, qs[0].q)] = 'Paga';
       quinzenas[qKey(emp, qs[1].ano, qs[1].mes, qs[1].q)] = ['Entregue', 'Assinada', 'Aberta', 'Aberta', 'Entregue'][ei];
@@ -839,4 +1130,40 @@ async function contadorAbertura() {
   finally { contadorOcupado = false; }
 }
 boasVindas().then(contadorAbertura).catch(() => {});
-if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn(e));
+/* ---------- atualização automática ----------
+   O sw.js novo instala sozinho (skipWaiting + clients.claim). Quando ele assume a página
+   ('controllerchange'), recarrega uma vez para já abrir a versão nova. Se a pessoa estiver
+   digitando ou com uma janela aberta, mostra um aviso para tocar e atualizar. */
+const RELOAD_KEY = 'folhazero_reload_em';
+let ATUALIZACAO_PENDENTE = false, RECARREGANDO = false;
+function formSujo() {
+  if ($('#f-id').value) return true;
+  return ['#f-inicio', '#f-hora-inicio', '#f-os', '#f-veiculo', '#f-valor', '#f-ajudante', '#f-obs'].some(s => $(s).value.trim());
+}
+function usuarioOcupado() {
+  if (!$('#modal').classList.contains('hidden') || !$('#qr-modal').classList.contains('hidden')) return true;
+  if (currentView() === 'lancar' && formSujo()) return true;
+  const a = document.activeElement;
+  return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'file');
+}
+function mostrarAvisoAtualizacao() { ATUALIZACAO_PENDENTE = true; $('#upd-banner').classList.remove('hidden'); }
+function aplicarAtualizacao(forcar) {
+  if (RECARREGANDO) return false;
+  let ultimo = 0; try { ultimo = +sessionStorage.getItem(RELOAD_KEY) || 0; } catch (_) {}
+  if (!forcar && Date.now() - ultimo < 15000) { mostrarAvisoAtualizacao(); return false; } // trava contra recarregar em loop
+  try { sessionStorage.setItem(RELOAD_KEY, String(Date.now())); } catch (_) {}
+  RECARREGANDO = true; location.reload(); return true;
+}
+function aoTrocarControlador() {
+  if (!TINHA_CONTROLE || RECARREGANDO) return; // primeira instalação: a página já é a versão atual
+  if (usuarioOcupado()) mostrarAvisoAtualizacao(); else aplicarAtualizacao(false);
+}
+$('#upd-banner').onclick = () => aplicarAtualizacao(true);
+let TINHA_CONTROLE = false;
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  TINHA_CONTROLE = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', aoTrocarControlador);
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+  }).catch(e => console.warn(e));
+}
