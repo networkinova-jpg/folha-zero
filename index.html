@@ -14,7 +14,7 @@
 </head>
 <body>
 <header class="topbar no-print">
-  <div class="brand"><span class="logo">FZ</span><div><strong>Folha Zero</strong><small>Forro e Tapeçaria · INOVA BLINDAGEM</small></div></div>
+  <div class="brand"><span class="logo">FZ</span><div><strong>Folha Zero</strong><small id="brand-sub">Ricardo Ribeiro · Tapeçaria</small></div></div>
 </header>
 
 <main>
@@ -138,10 +138,13 @@
     <div class="card">
       <h2>Operador</h2>
       <label>Nome que sai na folha<input type="text" id="s-operador" autocomplete="off" spellcheck="false"></label>
-      <button type="button" class="btn primary" id="btn-salvar-op">Salvar nome</button>
+      <label>Seu setor (aparece no topo do app)<select id="s-setor-op"></select></label>
+      <button type="button" class="btn primary" id="btn-salvar-op">Salvar operador</button>
     </div>
     <div class="card">
       <h2>Backup</h2>
+      <p class="hint"><b>Exportar backup</b> gera uma cópia de todos os seus lançamentos num arquivo. Salve esse arquivo no OneDrive, na pasta Documentos &gt; Folha Zero. Faça isso toda semana ou ao fechar a quinzena.</p>
+      <p class="hint"><b>Importar backup</b> só é usado se você trocar de celular, limpar o navegador ou perder os dados: escolha o arquivo salvo no OneDrive e o app volta como estava.</p>
       <p id="s-backup-info" class="hint"></p>
       <div class="actions">
         <button type="button" class="btn primary big" id="btn-exportar">Exportar backup</button>

@@ -10,7 +10,7 @@ const RENOMEAR = { 'VRL Blindados': 'VRZ Blindados' }; // nomes antigos de empre
 
 /* ---------- dados ---------- */
 function defaultData() {
-  return { version: 2, entries: [], quinzenas: {}, descontos: {}, settings: { operador: 'Ricardo', lastBackup: null, valorPadrao: { 'Concept Blindados': 510 } } };
+  return { version: 2, entries: [], quinzenas: {}, descontos: {}, settings: { operador: 'Ricardo Ribeiro', setorOperador: 'Tapeçaria', lastBackup: null, valorPadrao: { 'Concept Blindados': 510 } } };
 }
 let DB = load();
 if (localStorage.getItem(KEY) && /VRL Blindados/.test(localStorage.getItem(KEY))) save();
@@ -34,6 +34,8 @@ function normalize(d) {
   out.entries.forEach(e => { if (e.ajudante === undefined) e.ajudante = null; });
   out.settings = Object.assign(defaultData().settings, out.settings || {});
   if (!out.settings.valorPadrao || typeof out.settings.valorPadrao !== 'object') out.settings.valorPadrao = {};
+  if (out.settings.operador === 'Ricardo') out.settings.operador = 'Ricardo Ribeiro';
+  if (!SETORES.includes(out.settings.setorOperador)) out.settings.setorOperador = 'Tapeçaria';
   migrarNomes(out);
   return out;
 }
@@ -151,7 +153,9 @@ function show(view) {
 }
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => show(b.dataset.view));
 function currentView() { const v = document.querySelector('.view.active'); return v ? v.id.replace('view-', '') : 'painel'; }
+function renderBrand() { const b = document.getElementById('brand-sub'); if (b) b.textContent = `${DB.settings.operador || 'Operador'} · ${DB.settings.setorOperador || 'Tapeçaria'}`; }
 function render(view = currentView()) {
+  renderBrand();
   if (view === 'painel') renderPainel();
   if (view === 'lista') renderLista();
   if (view === 'folha') renderFolha();
@@ -587,13 +591,14 @@ $('#fo-fechar').onclick = () => fecharQuinzena(+$('#fo-ano').value, +$('#fo-mes'
 /* ---------- ajustes e backup ---------- */
 function renderAjustes() {
   $('#s-operador').value = DB.settings.operador || '';
+  fillSelect($('#s-setor-op'), SETORES); $('#s-setor-op').value = DB.settings.setorOperador || 'Tapeçaria';
   $('#s-valores').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}${e === 'Concept Blindados' ? '<br><small class="hint">Na folha, Tapeçaria sai como Forro</small>' : ''}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${valorInput(DB.settings.valorPadrao[e])}" placeholder="sem padrão"></div>`).join('');
   $('#s-dados-info').textContent = `${DB.entries.length} lançamento(s) salvos neste aparelho.` + (DB.entries.some(e => e.exemplo) ? ' Há dados de exemplo.' : '');
   const lb = DB.settings.lastBackup;
   $('#s-backup-info').innerHTML = lb ? `Último backup: <b>${new Date(lb).toLocaleString('pt-BR')}</b> (há ${diasDesde(lb)} dia(s)).` : 'Nenhum backup feito ainda.';
   if (diasDesde(lb) > 7) $('#s-backup-info').innerHTML += ' <b style="color:var(--warn)">Recomendado fazer um backup agora.</b>';
 }
-$('#btn-salvar-op').onclick = () => { const v = $('#s-operador').value.trim(); if (!v) return toast('Digite o nome do operador'); DB.settings.operador = v; save(); toast('Nome salvo'); };
+$('#btn-salvar-op').onclick = () => { const v = $('#s-operador').value.trim(); if (!v) return toast('Digite o nome do operador'); DB.settings.operador = v; DB.settings.setorOperador = $('#s-setor-op').value || 'Tapeçaria'; save(); renderBrand(); toast('Operador salvo'); };
 $('#btn-salvar-valores').onclick = () => {
   const vp = {}; let erro = false;
   document.querySelectorAll('#s-valores input').forEach(i => { const v = parseValor(i.value); if (Number.isNaN(v)) erro = true; else if (v != null) vp[i.dataset.emp] = v; });
