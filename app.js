@@ -10,7 +10,7 @@ const RENOMEAR = { 'VRL Blindados': 'VRZ Blindados' }; // nomes antigos de empre
 
 /* ---------- dados ---------- */
 function defaultData() {
-  return { version: 2, entries: [], quinzenas: {}, descontos: {}, settings: { operador: 'Ricardo Ribeiro', setorOperador: 'Tapeçaria', lastBackup: null, valorPadrao: { 'Concept Blindados': 510 }, aliquota: {} } };
+  return { version: 2, entries: [], quinzenas: {}, descontos: {}, settings: { operador: '', setorOperador: 'Tapeçaria', lastBackup: null, valorPadrao: { 'Concept Blindados': 510 }, aliquota: {} } };
 }
 let DB = load();
 if (localStorage.getItem(KEY) && /VRL Blindados/.test(localStorage.getItem(KEY))) save();
@@ -156,7 +156,7 @@ function show(view) {
 }
 document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => show(b.dataset.view));
 function currentView() { const v = document.querySelector('.view.active'); return v ? v.id.replace('view-', '') : 'painel'; }
-function renderBrand() { const b = document.getElementById('brand-sub'); if (b) b.textContent = `${DB.settings.operador || 'Operador'} · ${DB.settings.setorOperador || 'Tapeçaria'}`; }
+function renderBrand() { const b = document.getElementById('brand-sub'); if (b) b.textContent = DB.settings.operador ? `${DB.settings.operador} · ${DB.settings.setorOperador || 'Tapeçaria'}` : 'Cadastre seu nome na aba Empresas'; }
 function render(view = currentView()) {
   renderBrand();
   if (view === 'painel') renderPainel();
@@ -759,4 +759,17 @@ $('#btn-limpar').onclick = async () => {
 /* ---------- início ---------- */
 resetForm();
 renderPainel();
+renderBrand();
+/* primeira abertura neste aparelho: pede nome e setor do operador */
+async function boasVindas() {
+  if (DB.settings.operador) return;
+  const opts = SETORES.map(s => `<option value="${esc(s)}" ${s === 'Tapeçaria' ? 'selected' : ''}>${esc(s)}</option>`).join('');
+  const r = await modal('Bem-vindo ao Folha Zero', `<p>Antes de começar, digite seu nome. Ele sai no cabeçalho e na assinatura do Operador da folha.</p>
+    <label>Seu nome<input type="text" id="bv-nome" autocomplete="off" spellcheck="false" placeholder="Nome e sobrenome"></label>
+    <label>Seu setor<select id="bv-setor">${opts}</select></label>
+    <p class="hint">Dá para mudar depois na aba Empresas, no quadro Operador.</p>`,
+    [{ label: 'Começar', cls: 'primary', validate: () => { if (!$('#bv-nome').value.trim()) { toast('Digite seu nome'); return false; } return true; }, collect: () => ({ nome: $('#bv-nome').value.trim(), setor: $('#bv-setor').value }) }]);
+  if (r && r.nome) { DB.settings.operador = r.nome; DB.settings.setorOperador = r.setor || 'Tapeçaria'; save(); render(); toast('Tudo pronto, ' + r.nome.split(' ')[0]); }
+}
+boasVindas();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn(e));
