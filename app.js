@@ -108,6 +108,19 @@ function setDesconto(emp, ano, mes, q, txt) {
   save(); toast(v ? `Outros descontos salvos: ${fmtValor(v)}` : 'Outros descontos removidos'); return true;
 }
 function getDesconto(emp, ano, mes, q) { return DB.descontos[qKey(emp, ano, mes, q)] || 0; }
+/* modo degustação: só para quem começou pela tela de boas-vindas (trialInicio salvo). Sem trialInicio = sem limite. */
+const TRIAL_DIAS = 20, DONO_APP = 'Ricardo Ribeiro';
+function trialInfo() {
+  const ini = DB.settings.trialInicio; if (!ini || DB.settings.liberado) return null;
+  const usados = Math.floor((Date.now() - new Date(ini).getTime()) / 86400000);
+  const restantes = Math.max(0, TRIAL_DIAS - usados);
+  return { usados, restantes, expirado: restantes <= 0 };
+}
+function bloqueadoNovo() {
+  const t = trialInfo(); if (!t || !t.expirado) return false;
+  modal('Período de teste encerrado', `<p>Seu teste grátis de ${TRIAL_DIAS} dias do Folha Zero terminou, por isso não dá para lançar carros novos.</p><p>Para continuar usando, fale com <b>${DONO_APP}</b>.</p><p class="hint">Seus lançamentos, folhas e backup continuam disponíveis.</p>`, [{ label: 'OK', value: 1, cls: 'primary' }]);
+  return true;
+}
 function getAliquota(emp) { const a = (DB.settings.aliquota || {})[emp]; return typeof a === 'number' && a > 0 ? a : 0; }
 function totaisQ(emp, ano, mes, q) {
   const list = entradasQuinzena(emp, ano, mes, q);
@@ -154,7 +167,7 @@ function show(view) {
   window.scrollTo(0, 0);
   render(view);
 }
-document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => show(b.dataset.view));
+document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => { if (b.dataset.view === 'lancar' && !$('#f-id').value && bloqueadoNovo()) return; show(b.dataset.view); });
 function currentView() { const v = document.querySelector('.view.active'); return v ? v.id.replace('view-', '') : 'painel'; }
 function renderBrand() { const b = document.getElementById('brand-sub'); if (b) b.textContent = DB.settings.operador ? `${DB.settings.operador} · ${DB.settings.setorOperador || 'Tapeçaria'}` : 'Cadastre seu nome na aba Empresas'; }
 function render(view = currentView()) {
@@ -195,7 +208,7 @@ function qNome(o) { const p = periodo(o.ano, o.mes, o.q); return `${o.q == 1 ? '
 $('#p-prev').onclick = () => { PQ = qShift(PQ, -1); renderPainel(); };
 $('#p-next').onclick = () => { PQ = qShift(PQ, 1); renderPainel(); };
 $('#p-atual').onclick = () => { PQ = qAtual(); renderPainel(); };
-$('#p-lancar').onclick = () => { resetForm(); show('lancar'); };
+$('#p-lancar').onclick = () => { if (bloqueadoNovo()) return; resetForm(); show('lancar'); };
 ['#r-grp', '#r-empresa'].forEach(s => $(s).onchange = renderRelatorios);
 $('#fo-status').onchange = () => { DB.quinzenas[qKey($('#fo-empresa').value, +$('#fo-ano').value, +$('#fo-mes').value, +$('#fo-q').value)] = $('#fo-status').value; save(); renderFolha(); toast('Status alterado para ' + $('#fo-status').value); };
 ['#fo-empresa', '#fo-mes', '#fo-ano', '#fo-q'].forEach(s => $(s).onchange = renderFolha);
@@ -210,6 +223,9 @@ function renderPainel() {
   $('#p-pagamento').innerHTML = `Pagamento previsto: <b>${fmtData(dataPagamento(ano, mes, q))}</b>`;
   $('#p-atual').classList.toggle('hidden', at.ano === ano && at.mes === mes && at.q === q);
   $('#exemplo-alert').classList.toggle('hidden', !DB.entries.some(e => e.exemplo));
+  const ti = trialInfo(), ta = $('#trial-alert');
+  ta.classList.toggle('hidden', !ti);
+  if (ti) { ta.className = 'alert ' + (ti.expirado ? 'warn' : 'info'); ta.innerHTML = ti.expirado ? `<b>Teste grátis encerrado.</b> Para continuar lançando carros, fale com ${DONO_APP}.` : `<b>Teste grátis:</b> ${ti.restantes === 1 ? 'falta 1 dia' : `faltam ${ti.restantes} dias`} de ${TRIAL_DIAS}.`; }
   const and = DB.entries.filter(e => !e.dataTermino).sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
   let totFin = 0, html = '', ocultas = 0;
   const tot = { bruto: 0, ajudante: 0, desconto: 0, liquido: 0 };
@@ -369,6 +385,7 @@ function editar(id) {
 form.onsubmit = async ev => {
   ev.preventDefault();
   const id = $('#f-id').value;
+  if (!id && bloqueadoNovo()) return;
   const d = {
     empresa: $('#f-empresa').value, setor: $('#f-setor').value, dataInicio: $('#f-inicio').value,
     os: $('#f-os').value.trim(), veiculo: $('#f-veiculo').value.trim(), obs: $('#f-obs').value.trim(),
@@ -667,7 +684,8 @@ $('#file-import').onchange = async ev => {
   if (!data || !Array.isArray(data.entries)) return modal('Arquivo inválido', '<p>Este arquivo não é um backup do Folha Zero.</p>', [{ label: 'OK', value: 1, cls: 'primary' }]);
   const ok = await confirmar('Substituir dados?', `<p>O backup de <b>${(obj.geradoEm || obj.exportedAt) ? new Date(obj.geradoEm || obj.exportedAt).toLocaleString('pt-BR') : 'data desconhecida'}</b> tem <b>${data.entries.length}</b> lançamento(s).</p><p>Os <b>${DB.entries.length}</b> lançamento(s) atuais deste aparelho serão <b>substituídos</b>.</p>`, 'Substituir', 'danger');
   if (!ok) return;
-  DB = normalize(data); save(); render(); toast('Backup restaurado');
+  DB = normalize(data); // o backup leva junto a data de início do teste grátis (se houver)
+  save(); render(); toast('Backup restaurado');
 };
 
 /* ---------- relatórios ---------- */
@@ -769,7 +787,7 @@ async function boasVindas() {
     <label>Seu setor<select id="bv-setor">${opts}</select></label>
     <p class="hint">Dá para mudar depois na aba Empresas, no quadro Operador.</p>`,
     [{ label: 'Começar', cls: 'primary', validate: () => { if (!$('#bv-nome').value.trim()) { toast('Digite seu nome'); return false; } return true; }, collect: () => ({ nome: $('#bv-nome').value.trim(), setor: $('#bv-setor').value }) }]);
-  if (r && r.nome) { DB.settings.operador = r.nome; DB.settings.setorOperador = r.setor || 'Tapeçaria'; save(); render(); toast('Tudo pronto, ' + r.nome.split(' ')[0]); }
+  if (r && r.nome) { DB.settings.operador = r.nome; DB.settings.setorOperador = r.setor || 'Tapeçaria'; if (!DB.settings.trialInicio) DB.settings.trialInicio = new Date().toISOString(); save(); render(); toast('Tudo pronto, ' + r.nome.split(' ')[0]); }
 }
 boasVindas();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn(e));
