@@ -1,5 +1,5 @@
 'use strict';
-/* Folha Zero v1: controle de produção (forro e tapeçaria) */
+/* Folha Zero v1: controle de produção (tapeçaria) */
 const EMPRESAS = ['Concept Blindados', 'VRZ Blindados', 'Carbon Blindados', 'Bullet Blindados', 'Collet Blindados'];
 const SETORES = ['Desmontagem', 'Manta', 'Aço', 'Overlap', 'Tampa', 'Vidro', 'Montagem', 'Tapeçaria', 'Aço de retrovisor', 'Churrasqueira'];
 const STATUS = ['Aberta', 'Entregue', 'Assinada', 'Paga'];
@@ -91,7 +91,7 @@ function dataPagamento(ano, mes, q) {
 }
 function qKey(emp, ano, mes, q) { return `${emp}|${ano}-${pad(mes)}|${q}`; }
 function getStatus(emp, ano, mes, q) { return DB.quinzenas[qKey(emp, ano, mes, q)] || 'Aberta'; }
-function setorFolha(emp, setor) { return (emp === 'Concept Blindados' && setor === 'Tapeçaria') ? 'Forro' : setor; }
+function setorFolha(emp, setor) { return setor; } // Tapeçaria sai como Tapeçaria em todas as empresas ("Forro" descontinuado)
 function entradasQuinzena(emp, ano, mes, q) {
   const p = periodo(ano, mes, q);
   return DB.entries.filter(e => e.empresa === emp && e.dataTermino && e.dataTermino >= p.ini && e.dataTermino <= p.fim)
@@ -601,7 +601,7 @@ $('#fo-fechar').onclick = () => fecharQuinzena(+$('#fo-ano').value, +$('#fo-mes'
 function renderAjustes() {
   $('#s-operador').value = DB.settings.operador || '';
   fillSelect($('#s-setor-op'), SETORES); $('#s-setor-op').value = DB.settings.setorOperador || 'Tapeçaria';
-  $('#s-valores').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}${e === 'Concept Blindados' ? '<br><small class="hint">Na folha, Tapeçaria sai como Forro</small>' : ''}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${valorInput(DB.settings.valorPadrao[e])}" placeholder="sem padrão"></div>`).join('');
+  $('#s-valores').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${valorInput(DB.settings.valorPadrao[e])}" placeholder="sem padrão"></div>`).join('');
   $('#s-aliquotas').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${getAliquota(e) ? String(getAliquota(e)).replace('.', ',') : ''}" placeholder="0 %"></div>`).join('');
   $('#s-dados-info').textContent = `${DB.entries.length} lançamento(s) salvos neste aparelho.` + (DB.entries.some(e => e.exemplo) ? ' Há dados de exemplo.' : '');
   const lb = DB.settings.lastBackup;
