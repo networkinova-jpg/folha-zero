@@ -7,6 +7,8 @@ const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julh
 const LINHAS_POR_PAGINA = 16;
 const KEY = 'folhazero_v1';
 const RENOMEAR = { 'VRL Blindados': 'VRZ Blindados' }; // nomes antigos de empresas
+/* Contador de usuários: URL do Web App do Google Apps Script (termina em /exec). Vazio = contador desligado. */
+const CONTADOR_URL = 'https://script.google.com/macros/s/AKfycbx21D_MJeizj4ipu3w9XsjFJB2sSnwH5JQvYF81qvSkpjiigRsHIOUs6DeZXIN68v5E9w/exec';
 
 /* ---------- dados ---------- */
 function defaultData() {
@@ -617,6 +619,7 @@ $('#fo-fechar').onclick = () => fecharQuinzena(+$('#fo-ano').value, +$('#fo-mes'
 /* ---------- ajustes e backup ---------- */
 function renderAjustes() {
   $('#s-operador').value = DB.settings.operador || '';
+  $('#s-contador-hint').classList.toggle('hidden', !CONTADOR_URL);
   fillSelect($('#s-setor-op'), SETORES); $('#s-setor-op').value = DB.settings.setorOperador || 'Tapeçaria';
   $('#s-valores').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${valorInput(DB.settings.valorPadrao[e])}" placeholder="sem padrão"></div>`).join('');
   $('#s-aliquotas').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${getAliquota(e) ? String(getAliquota(e)).replace('.', ',') : ''}" placeholder="0 %"></div>`).join('');
@@ -625,7 +628,7 @@ function renderAjustes() {
   $('#s-backup-info').innerHTML = lb ? `Último backup: <b>${new Date(lb).toLocaleString('pt-BR')}</b> (há ${diasDesde(lb)} dia(s)).` : 'Nenhum backup feito ainda.';
   if (diasDesde(lb) > 7) $('#s-backup-info').innerHTML += ' <b style="color:var(--warn)">Recomendado fazer um backup agora.</b>';
 }
-$('#btn-salvar-op').onclick = () => { const v = $('#s-operador').value.trim(); if (!v) return toast('Digite o nome do operador'); DB.settings.operador = v; DB.settings.setorOperador = $('#s-setor-op').value || 'Tapeçaria'; save(); renderBrand(); toast('Operador salvo'); };
+$('#btn-salvar-op').onclick = () => { const v = $('#s-operador').value.trim(); if (!v) return toast('Digite o nome do operador'); DB.settings.operador = v; DB.settings.setorOperador = $('#s-setor-op').value || 'Tapeçaria'; save(); renderBrand(); toast('Operador salvo'); contadorAbertura(); };
 $('#btn-salvar-aliq').onclick = () => {
   const al = {}; let erro = false;
   document.querySelectorAll('#s-aliquotas input').forEach(i => { const v = parseValor(i.value.replace('%', '')); if (Number.isNaN(v) || (v != null && (v < 0 || v >= 100))) erro = true; else if (v) al[i.dataset.emp] = v; });
@@ -789,5 +792,51 @@ async function boasVindas() {
     [{ label: 'Começar', cls: 'primary', validate: () => { if (!$('#bv-nome').value.trim()) { toast('Digite seu nome'); return false; } return true; }, collect: () => ({ nome: $('#bv-nome').value.trim(), setor: $('#bv-setor').value }) }]);
   if (r && r.nome) { DB.settings.operador = r.nome; DB.settings.setorOperador = r.setor || 'Tapeçaria'; if (!DB.settings.trialInicio) DB.settings.trialInicio = new Date().toISOString(); save(); render(); toast('Tudo pronto, ' + r.nome.split(' ')[0]); }
 }
-boasVindas();
+/* ---------- contador de usuários ----------
+   Envia só: id aleatório do aparelho, nome e setor do operador, datas e status da degustação.
+   Nunca envia lançamentos, OS, veículos, valores, empresas ou status de quinzena.
+   Estado guardado fora do folhazero_v1 (não vai no backup, não muda ao importar backup). */
+const CKEY = 'folhazero_contador';
+function contadorEstado() { try { const s = JSON.parse(localStorage.getItem(CKEY)); return s && typeof s === 'object' ? s : {}; } catch (_) { return {}; } }
+function contadorSalvar(s) { try { localStorage.setItem(CKEY, JSON.stringify(s)); } catch (_) {} }
+function contadorId(s) {
+  if (!s.id || !/^fz-[0-9a-f]{24}$/.test(s.id)) {
+    const a = new Uint8Array(12); crypto.getRandomValues(a);
+    s.id = 'fz-' + Array.from(a, b => b.toString(16).padStart(2, '0')).join(''); contadorSalvar(s);
+  }
+  return s.id;
+}
+function contadorPayload(tipo, id) {
+  const t = trialInfo(), ini = DB.settings.trialInicio;
+  return { tipo, id, nome: String(DB.settings.operador || '').slice(0, 80), setor: String(DB.settings.setorOperador || '').slice(0, 40),
+    data: hojeISO(), quando: new Date().toISOString(), degustacao: !!t, degustacaoExpirada: !!(t && t.expirado),
+    inicioDegustacao: ini ? String(ini).slice(0, 10) : null };
+}
+async function contadorPost(body) {
+  const opts = { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, cache: 'no-store', credentials: 'omit', redirect: 'follow' };
+  const comPrazo = (o, ms) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms); return fetch(CONTADOR_URL, Object.assign({}, o, { signal: c.signal })).finally(() => clearTimeout(t)); };
+  try { const r = await comPrazo(opts, 15000); return r.ok; }
+  catch (e) {
+    if (navigator.onLine === false) return false;
+    // resposta sem CORS legível: tenta de novo sem ler a resposta
+    try { await comPrazo(Object.assign({}, opts, { mode: 'no-cors' }), 15000); return true; } catch (_) { return false; }
+  }
+}
+let contadorOcupado = false;
+async function contadorAbertura() {
+  if (!CONTADOR_URL || contadorOcupado || !DB.settings.operador) return;
+  contadorOcupado = true;
+  try {
+    const s = contadorEstado(), id = contadorId(s), hoje = hojeISO();
+    const assinatura = DB.settings.operador + '|' + DB.settings.setorOperador;
+    const tipo = !s.cadastro ? 'cadastro' : (s.uso !== hoje || s.enviado !== assinatura) ? 'uso' : null;
+    if (!tipo) return;
+    if (await contadorPost(JSON.stringify(contadorPayload(tipo, id)))) {
+      const n = contadorEstado(); n.id = id; if (tipo === 'cadastro') n.cadastro = new Date().toISOString();
+      n.uso = hoje; n.enviado = assinatura; contadorSalvar(n);
+    }
+  } catch (e) { console.warn('contador', e); }
+  finally { contadorOcupado = false; }
+}
+boasVindas().then(contadorAbertura).catch(() => {});
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(e => console.warn(e));
