@@ -455,7 +455,7 @@ function sheetsHtml(emp, ano, mes, q) {
         <tbody>${trs}</tbody>
       </table>
       <div class="sh-foot"><div class="ttl">APROVAÇÕES</div><div class="sigs">
-        ${['Operador', 'Coordenador', 'Lançamento'].map(r => `<div class="sig">${r}</div>`).join('')}
+        ${['Operador', 'Coordenador', 'Lançamento'].map(r => `<div class="sig">${r === 'Operador' && DB.settings.operador ? `<span class="sig-nome">${esc(DB.settings.operador)}</span>` : ''}<span>${r}</span></div>`).join('')}
       </div></div>
       <div class="sh-page"><span>${q}ª quinzena de ${MESES[mes - 1].toLowerCase()} de ${ano}</span><span>Folha ${pg + 1} de ${paginas}</span></div>
     </div>`;
@@ -512,6 +512,12 @@ function drawFolha(doc, emp, ano, mes, q, primeira) {
       const cx = 10 + i * 190 / 3;
       if (i) doc.line(cx, fy + 6, cx, fy + fh);
       doc.text(r, cx + 190 / 6, fy + fh - 2, { align: 'center' });
+      if (i === 0 && DB.settings.operador) {
+        doc.setFont('helvetica', 'bolditalic'); doc.setFontSize(12);
+        doc.text(fit(DB.settings.operador, 58, 12), cx + 190 / 6, fy + fh - 9, { align: 'center' });
+        doc.setLineWidth(0.2); doc.line(cx + 8, fy + fh - 7, cx + 190 / 3 - 8, fy + fh - 7);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setLineWidth(0.4);
+      }
     });
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
     doc.text(`${q}ª quinzena de ${MESES[mes - 1].toLowerCase()} de ${ano}`, 10, 287);
