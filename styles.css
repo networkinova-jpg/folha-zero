@@ -204,3 +204,12 @@ h3.sub{font-size:15px;margin:14px 0 6px}
 .pz-outro-box .btn{width:100%;margin-top:8px}
 .pz-aviso{color:var(--err);font-weight:700;font-size:14px;margin:6px 0 0}
 .pausa-info,.pz-mot .chip{overflow-wrap:anywhere;word-break:break-word}
+
+/* v19: fim de expediente (neutro) */
+.sit-fimexp{background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe}
+.btn.sit-opt.sit-fimexp{border-color:#a5b4fc}
+.chip.sit-fimexp::before{content:"🌙 "}
+.pausa-info.fim-exp{background:#eef2ff;color:#3730a3;border-color:#c7d2fe}
+.entry.is-fimexp:not(.is-etapa),.mini.is-fimexp:not(.is-etapa){box-shadow:inset 4px 0 0 #6366f1}
+.nums.fora-exp{margin-top:0}.nums.fora-exp b{font-size:18px}
+.pz-mot-fim{border-top:1px dashed #c7d2fe;margin-top:4px}
