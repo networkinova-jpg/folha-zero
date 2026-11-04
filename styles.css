@@ -173,3 +173,25 @@ h2.sec{margin:16px 4px 8px}
 /* v16: pesquisa da lista */
 .busca-lbl{margin-bottom:6px}
 .busca-lbl input{font-size:16px;min-height:48px}
+
+/* v17: pausas */
+.mini-acts{display:flex;flex-direction:column;gap:6px;min-width:112px}
+.mini-acts .btn{width:100%}
+.btn.pausar{background:#fff7ed;color:#9a3412;border:1px solid #fdba74}
+.btn.retomar{background:#1d4ed8;color:#fff}
+.pausa-info{margin-top:6px;padding:6px 10px;border-radius:10px;background:#fff7ed;color:#9a3412;border:1px solid #fdba74;font-weight:700;font-size:14px}
+.entry.is-pausado:not(.is-etapa){border-left:6px solid #f97316}
+.mini.is-pausado:not(.is-etapa){box-shadow:inset 4px 0 0 #f97316;padding-left:10px}
+#f-pausas-box{margin:4px 0 12px}
+.pz-tit{font-size:16px;margin:8px 0}
+.pz-row{border:1px solid #e3e8ef;border-radius:12px;padding:10px;margin-bottom:8px;background:#fafbfc}
+.pz-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.pz-row input,.pz-row select{min-width:0}
+h3.sub{font-size:15px;margin:14px 0 6px}
+.pz-mot{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #edf0f4}
+.pz-mot .chip{flex:1;white-space:normal;line-height:1.2}.pz-mot span{font-size:13px;color:var(--mut)}.pz-mot b{min-width:72px;text-align:right}
+.mini>div:first-child{flex:1;min-width:0}.mini .t,.mini .s,.pausa-info{overflow-wrap:anywhere}
+.mini .chip{white-space:normal;line-height:1.25}.mini .chip-btn{max-width:100%;text-align:left}.mini-acts{flex-shrink:0;min-width:104px}
+.parado-tempo{text-align:right;min-width:84px;flex-shrink:0}
+.pz-row .row2{grid-template-columns:1fr}.pz-row label{min-width:0}.pz-row input{width:100%;box-sizing:border-box}
+.row2>label,.row3>label{min-width:0}.row2 input,.row3 input{min-width:0;max-width:100%;box-sizing:border-box}

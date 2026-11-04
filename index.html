@@ -86,6 +86,11 @@
         </div>
         <small class="hint">Deixe a data vazia para manter o serviço em andamento. A hora é opcional.</small>
       </div>
+      <div id="f-pausas-box" class="hidden">
+        <h3 class="pz-tit">Pausas</h3>
+        <div id="f-pausas"></div>
+        <small class="hint">Corrija o início e o fim (data e hora) ou exclua uma pausa lançada errada. Fim vazio = pausa em andamento. As mudanças valem ao tocar em Salvar alterações.</small>
+      </div>
       <label>Observação<textarea id="f-obs" rows="2" autocomplete="off" spellcheck="false" name="obs-nao-preencher"></textarea></label>
       <div class="actions">
         <button type="submit" class="btn primary big" id="btn-salvar">Salvar lançamento</button>
@@ -101,7 +106,7 @@
       <h2>Filtros</h2>
       <div class="row2">
         <label>Empresa<select id="l-empresa"></select></label>
-        <label>Filtrar por<select id="l-status"><option value="">Todos</option><option value="andamento">Em andamento</option><option value="finalizado">Finalizado</option><option value="semvalor">Sem valor</option></select></label>
+        <label>Filtrar por<select id="l-status"><option value="">Todos</option><option value="andamento">Em andamento</option><option value="finalizado">Finalizado</option><option value="semvalor">Sem valor</option><option value="pausado">Pausados</option></select></label>
       </div>
       <div class="row2">
         <label>De<input type="date" id="l-de" autocomplete="off"></label>
@@ -185,7 +190,7 @@
     </div>
     <div class="card">
       <h2>Sobre</h2>
-      <p class="hint">Folha Zero versão 16. Os dados ficam salvos somente neste aparelho. Faça backup com frequência.</p>
+      <p class="hint">Folha Zero versão 17. Os dados ficam salvos somente neste aparelho. Faça backup com frequência.</p>
     </div>
   </section>
 
