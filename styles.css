@@ -132,16 +132,15 @@ h2.sec{margin:16px 4px 8px}
 .dt-help{display:flex;gap:10px;align-items:center;margin:8px 0 12px;flex-wrap:wrap}.dt-help .hint{margin:0}
 #lbl-termino{margin-bottom:10px}
 .sit{border:1px solid transparent}
-.sit-processo{background:#fff4dd;color:#7a5200}
-.sit-equipe{background:#e0e7ff;color:#3730a3}
-.sit-peca{background:#ffedd5;color:#9a3412}
-.sit-vidro{background:#cffafe;color:#155e75}
-.sit-eletrico{background:#fee2e2;color:#991b1b}
+.sit-processo{background:#e0f2fe;color:#075985}
+.sit-alerta{background:#ffedd5;color:#9a3412;border-color:#f97316}
+.sit-alerta::before{content:"\26A0\FE0E  ";font-weight:800}
+.sit-etapa{background:#6d28d9;color:#fff}
+.sit-vidraceiro{background:#cffafe;color:#155e75}
 .sit-ajuste{background:#fef9c3;color:#854d0e}
-.sit-pronto{background:#6d28d9;color:#fff}
 .sit-fin{background:#d1fae5;color:#065f46}
-.entry.is-pronto{border-left:6px solid #6d28d9}
-.mini.is-pronto{box-shadow:inset 4px 0 0 #6d28d9;padding-left:10px}
+.entry.is-etapa{border-left:6px solid #6d28d9}
+.mini.is-etapa{box-shadow:inset 4px 0 0 #6d28d9;padding-left:10px}
 .sit-lbl{margin:10px 0 0}
 .sit-lbl .sit-sel{min-height:44px;padding:8px 10px;font-size:15px}
 .chip-btn{background:none;border:0;padding:4px 0 0;display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-family:inherit;min-height:32px}
@@ -170,3 +169,7 @@ h2.sec{margin:16px 4px 8px}
 .qr-panel{background:#fff;padding:16px 16px calc(16px + env(safe-area-inset-bottom));border-radius:18px 18px 0 0}
 .qr-panel p{margin:0 0 6px;font-size:16px;font-weight:600;text-align:center}
 .qr-modal.erro .qr-panel p{color:var(--err)}
+
+/* v16: pesquisa da lista */
+.busca-lbl{margin-bottom:6px}
+.busca-lbl input{font-size:16px;min-height:48px}

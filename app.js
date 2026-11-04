@@ -4,12 +4,14 @@ const EMPRESAS = ['Concept Blindados', 'VRZ Blindados', 'Carbon Blindados', 'Bul
 const SETORES = ['Desmontagem', 'Manta', 'Aço', 'Overlap', 'Tampa', 'Vidro', 'Montagem', 'Tapeçaria', 'Aço de retrovisor', 'Churrasqueira', 'Steel', 'Aço Maçaneta', 'Qualidade'];
 const STATUS = ['Aberta', 'Entregue', 'Assinada', 'Paga']; // status da quinzena (por empresa)
 /* Situação do carro (por lançamento), diferente do status da quinzena */
-const SITUACOES = ['Em processo', 'Aguardando equipe', 'Faltando peça', 'Faltando vidro', 'Problema elétrico', 'Aguardando ajuste', 'Pronto, aguardando outro setor', 'Finalizado'];
-const SIT_CLS = ['processo', 'equipe', 'peca', 'vidro', 'eletrico', 'ajuste', 'pronto', 'fin'];
-const SIT_INICIAL = 'Em processo', SIT_FIN = 'Finalizado', SIT_PRONTO = 'Pronto, aguardando outro setor';
+const SITUACOES = ['Em processo', 'Faltando peça', 'Faltando vidro', 'Problemas elétricos', 'Problemas com vidro', 'Aguardando etapa anterior', 'Aguardando vidraceiro', 'Aguardando ajuste da produção', 'Impasse na resolução de um problema', 'Finalizado'];
+const SIT_CLS = ['processo', 'alerta', 'alerta', 'alerta', 'alerta', 'etapa', 'vidraceiro', 'ajuste', 'alerta', 'fin'];
+const SIT_INICIAL = 'Em processo', SIT_FIN = 'Finalizado', SIT_DESTAQUE = 'Aguardando etapa anterior';
+/* v16: nomes antigos (v15) de situação viram os novos */
+const SIT_MIGRAR = { 'Aguardando equipe': 'Aguardando etapa anterior', 'Pronto, aguardando outro setor': 'Aguardando etapa anterior', 'Problema elétrico': 'Problemas elétricos', 'Aguardando ajuste': 'Aguardando ajuste da produção' };
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-const APP_VERSAO = 15;
+const APP_VERSAO = 16;
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const LINHAS_POR_PAGINA = 16;
 const KEY = 'folhazero_v1';
@@ -56,6 +58,7 @@ function normEntry(e) {
   if (e.ajudante === undefined) e.ajudante = null;
   e.horaInicio = typeof e.horaInicio === 'string' && HM_RE.test(e.horaInicio) ? e.horaInicio : null;
   e.horaTermino = e.dataTermino && typeof e.horaTermino === 'string' && HM_RE.test(e.horaTermino) ? e.horaTermino : null;
+  if (typeof e.situacao === 'string' && SIT_MIGRAR[e.situacao]) e.situacao = SIT_MIGRAR[e.situacao];
   if (e.dataTermino) e.situacao = SIT_FIN;
   else if (!SITUACOES.includes(e.situacao) || e.situacao === SIT_FIN) e.situacao = SIT_INICIAL;
   return e;
@@ -273,7 +276,11 @@ $('#p-relmes').onclick = () => { show('relatorios'); relSub('mes'); };
 $('#fo-status').onchange = () => { DB.quinzenas[qKey($('#fo-empresa').value, +$('#fo-ano').value, +$('#fo-mes').value, +$('#fo-q').value)] = $('#fo-status').value; save(); renderFolha(); toast('Status alterado para ' + $('#fo-status').value); };
 ['#fo-empresa', '#fo-mes', '#fo-ano', '#fo-q'].forEach(s => $(s).onchange = renderFolha);
 ['#l-empresa', '#l-status', '#l-de', '#l-ate'].forEach(s => $(s).onchange = renderLista);
-$('#l-limpar').onclick = () => { ['#l-empresa', '#l-status', '#l-de', '#l-ate'].forEach(s => $(s).value = ''); renderLista(); };
+$('#l-limpar').onclick = () => { ['#l-busca', '#l-empresa', '#l-status', '#l-de', '#l-ate'].forEach(s => $(s).value = ''); renderLista(); };
+/* v16: pesquisa na lista, só pelo número da OS (parte do número já encontra) */
+const semAcento = t => String(t == null ? '' : t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+$('#l-busca').addEventListener('input', () => renderLista());
+$('#l-busca').addEventListener('search', () => renderLista());
 
 /* ---------- painel ---------- */
 function renderPainel() {
@@ -327,7 +334,7 @@ function renderPainel() {
     $('#fo-empresa').value = c.dataset.emp; $('#fo-mes').value = mes; $('#fo-ano').value = ano; $('#fo-q').value = q; show('folha');
   });
   $('#p-and-count').textContent = and.length;
-  $('#p-andamento').innerHTML = and.length ? and.map(e => { const d = diffDias(e.dataInicio, hojeISO()); return `<div class="mini${e.situacao === SIT_PRONTO ? ' is-pronto' : ''}" data-id="${e.id}"><div><div class="t">OS ${esc(e.os)} · ${esc(e.veiculo)}</div><div class="s">${esc(e.empresa)} · ${esc(e.setor)} · início ${fmtDataHora(e.dataInicio, e.horaInicio)} · ${d <= 0 ? 'desde hoje' : `há ${plDias(d)}`}</div>
+  $('#p-andamento').innerHTML = and.length ? and.map(e => { const d = diffDias(e.dataInicio, hojeISO()); return `<div class="mini${e.situacao === SIT_DESTAQUE ? ' is-etapa' : ''}" data-id="${e.id}"><div><div class="t">OS ${esc(e.os)} · ${esc(e.veiculo)}</div><div class="s">${esc(e.empresa)} · ${esc(e.setor)} · início ${fmtDataHora(e.dataInicio, e.horaInicio)} · ${d <= 0 ? 'desde hoje' : `há ${plDias(d)}`}</div>
     <button type="button" class="chip-btn act-sit" aria-label="Mudar situação do carro OS ${esc(e.os)}">${sitChip(e.situacao)}<span class="chev">▾</span></button></div><button type="button" class="btn ok small act-fin">Finalizar</button></div>`; }).join('') : '<p class="empty">Nenhum carro em andamento.</p>';
   $('#p-andamento').querySelectorAll('.mini').forEach(m => { m.querySelector('.act-fin').onclick = () => finalizar(m.dataset.id); m.querySelector('.act-sit').onclick = () => mudarSituacao(m.dataset.id); });
   renderAlertas();
@@ -355,7 +362,7 @@ function renderAlertas() {
 /* ---------- lista ---------- */
 function entryHtml(e) {
   const fin = !!e.dataTermino;
-  return `<div class="entry${e.situacao === SIT_PRONTO ? ' is-pronto' : ''}" data-id="${e.id}">
+  return `<div class="entry${e.situacao === SIT_DESTAQUE ? ' is-etapa' : ''}" data-id="${e.id}">
     <div class="top"><div><div class="os">OS ${esc(e.os)}</div><div>${esc(e.veiculo)}</div></div>
       ${sitChip(e.situacao)}</div>
     <div class="meta">${esc(e.empresa)} · ${esc(e.setor)}<br>
@@ -380,7 +387,9 @@ function bindEntryButtons(root) {
 }
 function renderLista() {
   const emp = $('#l-empresa').value, st = $('#l-status').value, de = $('#l-de').value, ate = $('#l-ate').value;
+  const busca = semAcento($('#l-busca').value.trim());
   let list = DB.entries.filter(e => {
+    if (busca && !semAcento(e.os).includes(busca)) return false;
     if (emp && e.empresa !== emp) return false;
     if (st === 'andamento' && e.dataTermino) return false;
     if (st === 'finalizado' && !e.dataTermino) return false;
@@ -970,7 +979,7 @@ function renderRelMes() {
   }
   h += `<div class="card"><h2>Situação dos carros</h2><div class="sit-grid" id="rm-situacoes">${SITUACOES.map(s => `<div class="sit-cnt">${sitChip(s)}<b>${R.porSituacao[s]}</b></div>`).join('')}</div>
     <p class="hint">Finalizado conta os carros finalizados no mês. As outras situações contam os carros ainda em aberto.</p></div>`;
-  h += `<div class="card"><h2>Carros parados <span class="badge">${R.parados.length}</span></h2><div id="rm-parados">${R.parados.length ? R.parados.map(x => `<div class="mini${x.e.situacao === SIT_PRONTO ? ' is-pronto' : ''}"><div><div class="t">${esc(carroTxt(x))}</div><div class="s">${esc(x.e.empresa)} · ${esc(x.e.setor)} · início ${fmtDataHora(x.e.dataInicio, x.e.horaInicio)}</div>${sitChip(x.e.situacao)}</div><div class="dias"><b>${x.dias}</b><span>${x.dias === 1 ? 'dia' : 'dias'}</span></div></div>`).join('') : '<p class="empty">Nenhum carro parado.</p>'}</div></div>`;
+  h += `<div class="card"><h2>Carros parados <span class="badge">${R.parados.length}</span></h2><div id="rm-parados">${R.parados.length ? R.parados.map(x => `<div class="mini${x.e.situacao === SIT_DESTAQUE ? ' is-etapa' : ''}"><div><div class="t">${esc(carroTxt(x))}</div><div class="s">${esc(x.e.empresa)} · ${esc(x.e.setor)} · início ${fmtDataHora(x.e.dataInicio, x.e.horaInicio)}</div>${sitChip(x.e.situacao)}</div><div class="dias"><b>${x.dias}</b><span>${x.dias === 1 ? 'dia' : 'dias'}</span></div></div>`).join('') : '<p class="empty">Nenhum carro parado.</p>'}</div></div>`;
   h += `<div class="card"><h2>Tempo por carro</h2><div id="rm-lista">${R.n ? R.fin.map(x => `<div class="mini"><div><div class="t">${esc(carroTxt(x))}</div><div class="s">${esc(x.e.empresa)} · ${esc(x.e.setor)} · ${fmtDataHora(x.e.dataInicio, x.e.horaInicio)} até ${fmtDataHora(x.e.dataTermino, x.e.horaTermino)}</div></div><div class="s"><b>${esc(fmtDur(x.d))}</b></div></div>`).join('') : '<p class="empty">Nenhum carro finalizado neste mês.</p>'}</div></div>`;
   $('#rm-out').innerHTML = h;
 }
@@ -1045,7 +1054,7 @@ function dadosExemplo() {
         entries.push({ id: uid(), empresa: emp, setor: ei === 0 ? 'Tapeçaria' : SETORES[(seq * 3 + ei) % SETORES.length], dataInicio: inicio, dataTermino: aberto ? null : termino,
           os: String(os++), veiculo: veic[seq % veic.length], valor: seq % 11 === 0 ? null : (ei === 0 ? 510 : 300 + (seq % 5) * 40), ajudante: seq % 4 === 0 ? 80 : null, obs: seq % 6 === 0 ? 'dados de exemplo' : '', exemplo: true, createdAt: Date.now() - (200 - seq) * 60000, updatedAt: Date.now(),
           horaInicio: seq % 2 ? `${pad(7 + seq % 3)}:${seq % 4 ? '00' : '30'}` : null, horaTermino: !aberto && seq % 2 ? `${pad(13 + seq % 5)}:00` : null,
-          situacao: aberto ? SITUACOES[ei % 7] : SIT_FIN });
+          situacao: aberto ? SITUACOES[ei % (SITUACOES.length - 1)] : SIT_FIN });
       }
       quinzenas[qKey(emp, qs[0].ano, qs[0].mes, qs[0].q)] = 'Paga';
       quinzenas[qKey(emp, qs[1].ano, qs[1].mes, qs[1].q)] = ['Entregue', 'Assinada', 'Aberta', 'Aberta', 'Entregue'][ei];
