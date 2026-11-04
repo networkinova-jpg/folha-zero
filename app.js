@@ -11,10 +11,11 @@ const SIT_INICIAL = 'Em processo', SIT_FIN = 'Finalizado', SIT_DESTAQUE = 'Aguar
 const SIT_MIGRAR = { 'Aguardando equipe': 'Aguardando etapa anterior', 'Pronto, aguardando outro setor': 'Aguardando etapa anterior', 'Problema elétrico': 'Problemas elétricos', 'Aguardando ajuste': 'Aguardando ajuste da produção' };
 /* v17: motivos de pausa = situações da lista oficial, menos Em processo e Finalizado */
 const MOTIVOS_PAUSA = SITUACOES.filter(s => s !== SIT_INICIAL && s !== SIT_FIN);
+const OUTRO_MAX = 60; // v18: motivo de pausa digitado ("Outro motivo")
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DT_RE = /^\d{4}-\d\d-\d\dT([01]\d|2[0-3]):[0-5]\d$/; // data e hora local 'AAAA-MM-DDTHH:MM'
-const APP_VERSAO = 17;
+const APP_VERSAO = 18;
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const LINHAS_POR_PAGINA = 16;
 const KEY = 'folhazero_v1';
@@ -67,7 +68,8 @@ function normEntry(e) {
   /* v17: pausas [{ motivo, inicio, fim }] (fim vazio = pausa em andamento). Dados antigos: pausas = [] */
   const ps = Array.isArray(e.pausas) ? e.pausas.filter(p => p && typeof p === 'object' && typeof p.inicio === 'string' && DT_RE.test(p.inicio)) : [];
   ps.forEach(p => {
-    if (typeof p.motivo === 'string' && SIT_MIGRAR[p.motivo]) p.motivo = SIT_MIGRAR[p.motivo];
+    if (p.outro) p.outro = true; else delete p.outro; // v18: motivo digitado, fica como o usuário escreveu
+    if (!p.outro && typeof p.motivo === 'string' && SIT_MIGRAR[p.motivo]) p.motivo = SIT_MIGRAR[p.motivo];
     if (typeof p.motivo !== 'string' || !p.motivo.trim()) p.motivo = 'Sem motivo';
     if (!(typeof p.fim === 'string' && DT_RE.test(p.fim))) p.fim = null; else if (p.fim < p.inicio) p.fim = p.inicio;
   });
@@ -76,7 +78,7 @@ function normEntry(e) {
   const ult = ps[ps.length - 1];
   if (ult && !ult.fim && e.dataTermino) { const f = `${e.dataTermino}T${e.horaTermino || '23:59'}`; ult.fim = f < ult.inicio ? ult.inicio : f; }
   e.pausas = ps;
-  if (ult && !ult.fim && e.situacao === SIT_INICIAL && SITUACOES.includes(ult.motivo)) e.situacao = ult.motivo;
+  if (ult && !ult.fim && !ult.outro && e.situacao === SIT_INICIAL && SITUACOES.includes(ult.motivo)) e.situacao = ult.motivo;
   return e;
 }
 /* migração de nomes antigos de empresas (dados salvos e backups importados) */
@@ -145,6 +147,11 @@ function pausaAberta(e) { if (e.dataTermino || !Array.isArray(e.pausas) || !e.pa
 function pausaDesde(p) { return p.inicio.slice(0, 10) === hojeISO() ? p.inicio.slice(11, 16) : fmtDT(p.inicio); }
 function pausaInfoHtml(e) { const p = pausaAberta(e); return p ? `<div class="pausa-info">⏸ Pausado: ${esc(p.motivo)} desde ${pausaDesde(p)}</div>` : ''; }
 function pausasTotalMin(e) { return (e.pausas || []).reduce((s, p) => s + (p.fim ? Math.max(0, dtMin(p.fim) - dtMin(p.inicio)) : 0), 0); }
+/* v18: motivo digitado. Fora da lista oficial conta como "outro" (agrupado pelo texto, sem diferenciar maiúsculas e espaços) */
+function ehOutro(p) { return !!p.outro || !MOTIVOS_PAUSA.includes(p.motivo); }
+function limpaMotivo(t) { return String(t || '').replace(/\s+/g, ' ').trim().slice(0, OUTRO_MAX); }
+function chaveMotivo(p) { return ehOutro(p) ? 'outro:' + String(p.motivo || '').replace(/\s+/g, ' ').trim().toLowerCase() : p.motivo; }
+function motivoChip(m, outro) { return outro ? `<span class="chip sit sit-outro">${esc(m)}</span>` : sitChip(m); }
 function botaoPausa(e) { return pausaAberta(e) ? '<button type="button" class="btn small act-pausa retomar">▶ Retomar</button>' : '<button type="button" class="btn small act-pausa pausar">⏸ Pausar</button>'; }
 function fmtDiasDec(min) { const n = min / 1440; return `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ${Math.round(n * 10) === 10 ? 'dia' : 'dias'}`; }
 function sitCls(s) { const i = SITUACOES.indexOf(s); return 'sit sit-' + (SIT_CLS[i] || 'processo'); }
@@ -473,7 +480,7 @@ async function setSituacao(id, sit) {
   if (sit === SIT_FIN) { if (!e.dataTermino) { await finalizar(id); render(); } return; }
   if (e.dataTermino) return; // finalizado: para reabrir, use Editar e apague a data término
   const pz = pausaAberta(e);
-  if (pz && sit === SIT_INICIAL) return retomar(id); // pausado e voltou para Em processo = retomar
+  if (pz && sit === SIT_INICIAL) return retomar(id, SIT_INICIAL); // pausado e voltou para Em processo = retomar
   if (pz && sit !== pz.motivo && MOTIVOS_PAUSA.includes(sit)) { // pausado e trocou o motivo: fecha a pausa e abre outra com o novo motivo
     const ag = agoraDT(); pz.fim = ag < pz.inicio ? pz.inicio : ag; e.pausas.push({ motivo: sit, inicio: pz.fim, fim: null });
   }
@@ -489,17 +496,41 @@ async function mudarSituacao(id) {
 async function pausar(id) {
   const e = DB.entries.find(x => x.id === id); if (!e || e.dataTermino) return;
   if (pausaAberta(e)) return retomar(id);
-  const v = await modal('Pausar carro', `<p><b>OS ${esc(e.os)}</b> · ${esc(e.veiculo)}<br>${esc(e.empresa)} · ${esc(e.setor)}</p><p class="hint">Escolha o motivo da pausa. O tempo parado conta a partir de agora (${agoraHM()}).</p>`,
-    MOTIVOS_PAUSA.map(m => ({ label: m, value: m, cls: 'sit-opt ' + sitCls(m) })).concat([{ label: 'Cancelar', value: null }]));
+  const txtOutro = () => limpaMotivo($('#pz-outro') ? $('#pz-outro').value : '');
+  const v = await modal('Pausar carro', `<p><b>OS ${esc(e.os)}</b> · ${esc(e.veiculo)}<br>${esc(e.empresa)} · ${esc(e.setor)}</p><p class="hint">Escolha o motivo da pausa. O tempo parado conta a partir de agora (${agoraHM()}).</p>
+    <div id="pz-outro-box" class="pz-outro-box hidden"><label>Digite o motivo<input type="text" id="pz-outro" maxlength="${OUTRO_MAX}" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="Ex.: Aguardando cliente"></label>
+    <p id="pz-outro-aviso" class="pz-aviso hidden">Digite o motivo da pausa.</p><button type="button" id="pz-outro-ok" class="btn primary big">⏸ Pausar</button></div>`,
+    MOTIVOS_PAUSA.map(m => ({ label: m, value: m, cls: 'sit-opt ' + sitCls(m) })).concat([
+      { label: 'Outro motivo', value: '', cls: 'sit-opt sit-outro pz-outro-opt', action: () => {
+        const box = $('#pz-outro-box'), ob = $('#m-actions .pz-outro-opt'); ob.after(box); ob.classList.add('atual');
+        box.classList.remove('hidden'); $('#pz-outro').focus(); box.scrollIntoView({ block: 'nearest' }); } },
+      { label: 'Pausar com outro motivo', value: '', cls: 'hidden pz-outro-enviar',
+        validate: () => { const ok = !!txtOutro(); $('#pz-outro-aviso').classList.toggle('hidden', ok); if (!ok) { toast('Digite o motivo da pausa.'); $('#pz-outro').focus(); } return ok; },
+        collect: () => ({ outro: txtOutro() }) },
+      { label: 'Cancelar', value: null }]),
+    () => {
+      const enviar = () => $('#m-actions .pz-outro-enviar').click();
+      $('#pz-outro-ok').onclick = enviar;
+      $('#pz-outro').onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); enviar(); } };
+      $('#pz-outro').oninput = () => { if ($('#pz-outro').value.trim()) $('#pz-outro-aviso').classList.add('hidden'); };
+    });
   if (!v || e.dataTermino || pausaAberta(e)) return;
   if (!Array.isArray(e.pausas)) e.pausas = [];
-  e.pausas.push({ motivo: v, inicio: agoraDT(), fim: null }); e.situacao = v; e.updatedAt = Date.now();
-  save(); render(); toast('Pausado: ' + v);
+  let pz;
+  if (typeof v === 'object') {
+    const ofic = MOTIVOS_PAUSA.find(m => m.toLowerCase() === v.outro.toLowerCase()); // digitou um motivo da lista: usa o da lista
+    pz = ofic ? { motivo: ofic, inicio: agoraDT(), fim: null } : { motivo: v.outro, outro: true, inicio: agoraDT(), fim: null };
+  } else pz = { motivo: v, inicio: agoraDT(), fim: null };
+  e.pausas.push(pz); if (!pz.outro) e.situacao = pz.motivo; // motivo digitado não vira situação (fica a situação da lista que já estava)
+  e.updatedAt = Date.now();
+  save(); render(); toast('Pausado: ' + pz.motivo);
 }
-function retomar(id) {
+function retomar(id, sitFinal) {
   const e = DB.entries.find(x => x.id === id); if (!e) return;
   const p = pausaAberta(e); if (!p) return;
-  const ag = agoraDT(); p.fim = ag < p.inicio ? p.inicio : ag; e.situacao = SIT_INICIAL; e.updatedAt = Date.now();
+  const ag = agoraDT(); p.fim = ag < p.inicio ? p.inicio : ag;
+  if (sitFinal || !p.outro || !SITUACOES.includes(e.situacao)) e.situacao = sitFinal || SIT_INICIAL; // motivo digitado: mantém a situação que já estava
+  e.updatedAt = Date.now();
   save(); render(); toast(`Produção retomada (pausa de ${fmtHM(dtMin(p.fim) - dtMin(p.inicio))})`);
 }
 function alternarPausa(id) { const e = DB.entries.find(x => x.id === id); if (!e) return; return pausaAberta(e) ? retomar(id) : pausar(id); }
@@ -532,12 +563,18 @@ function renderPausasEditor() {
   const box = $('#f-pausas');
   box.innerHTML = EDIT_PAUSAS.length ? EDIT_PAUSAS.map((p, i) => `<div class="pz-row" data-i="${i}">
       <div class="pz-head"><b>Pausa ${i + 1}</b><button type="button" class="btn ghost small pz-del" style="color:var(--err)">Excluir pausa</button></div>
-      <label>Motivo<select class="pz-motivo">${(MOTIVOS_PAUSA.includes(p.motivo) ? MOTIVOS_PAUSA : MOTIVOS_PAUSA.concat([p.motivo])).map(m => `<option value="${esc(m)}" ${m === p.motivo ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label>
+      <label>Motivo<select class="pz-motivo">${MOTIVOS_PAUSA.map(m => `<option value="${esc(m)}" ${!ehOutro(p) && m === p.motivo ? 'selected' : ''}>${esc(m)}</option>`).join('')}<option value="__outro__" ${ehOutro(p) ? 'selected' : ''}>Outro motivo</option></select></label>
+      <label class="pz-outro-lbl${ehOutro(p) ? '' : ' hidden'}">Motivo digitado<input type="text" class="pz-outro-txt" maxlength="${OUTRO_MAX}" autocomplete="off" autocorrect="off" spellcheck="false" value="${ehOutro(p) ? esc(p.motivo || '') : ''}"></label>
       <div class="row2"><label>Início<input type="datetime-local" class="pz-ini" autocomplete="off" value="${esc(p.inicio || '')}"></label><label>Fim<input type="datetime-local" class="pz-fim" autocomplete="off" value="${esc(p.fim || '')}"></label></div>
     </div>`).join('') : '<p class="hint">Nenhuma pausa registrada.</p>';
   box.querySelectorAll('.pz-row').forEach(r => {
     const p = EDIT_PAUSAS[+r.dataset.i];
-    r.querySelector('.pz-motivo').onchange = ev => { p.motivo = ev.target.value; };
+    const txt = r.querySelector('.pz-outro-txt'), lbl = r.querySelector('.pz-outro-lbl');
+    r.querySelector('.pz-motivo').onchange = ev => {
+      if (ev.target.value === '__outro__') { p.outro = true; p.motivo = txt.value; lbl.classList.remove('hidden'); txt.focus(); }
+      else { delete p.outro; p.motivo = ev.target.value; lbl.classList.add('hidden'); }
+    };
+    txt.oninput = () => { p.outro = true; p.motivo = txt.value; };
     r.querySelector('.pz-ini').onchange = ev => { p.inicio = (ev.target.value || '').slice(0, 16); };
     r.querySelector('.pz-fim').onchange = ev => { p.fim = (ev.target.value || '').slice(0, 16) || null; };
     r.querySelector('.pz-del').onclick = () => { EDIT_PAUSAS.splice(+r.dataset.i, 1); renderPausasEditor(); toast('Pausa removida. Toque em Salvar alterações para confirmar.'); };
@@ -548,6 +585,7 @@ function validaPausas(ps) {
   for (let i = 0; i < s.length; i++) {
     const p = s[i];
     if (!DT_RE.test(p.inicio || '')) return 'Informe a data e a hora de início de cada pausa.';
+    if (p.outro && !limpaMotivo(p.motivo)) return 'Digite o motivo de cada pausa com Outro motivo.';
     if (p.fim && !DT_RE.test(p.fim)) return 'A data e hora de fim de uma pausa está incompleta.';
     if (p.fim && p.fim < p.inicio) return 'O fim de uma pausa não pode ser antes do início.';
     if (!p.fim && i < s.length - 1) return 'Só a última pausa pode ficar sem fim (pausa em andamento).';
@@ -559,10 +597,24 @@ function resetForm() {
   EDIT_PAUSAS = []; $('#f-pausas-box').classList.add('hidden'); $('#f-pausas').innerHTML = '';
   form.reset(); $('#f-id').value = ''; $('#form-title').textContent = 'Novo lançamento';
   $('#btn-salvar').textContent = 'Salvar lançamento';
-  $('#lbl-termino').classList.add('hidden'); $('#btn-cancelar-edicao').classList.add('hidden');
+  $('#lbl-termino').classList.add('hidden'); $('#btn-cancelar-edicao').classList.add('hidden'); $('#btn-reabrir').classList.add('hidden');
   atualizaValorPadraoBtn();
 }
 $('#btn-cancelar-edicao').onclick = () => { resetForm(); show('lista'); };
+/* v18: reabrir carro finalizado por engano (apaga término, volta para Em processo e sai da folha enquanto estiver aberto) */
+async function reabrir(id) {
+  const e = DB.entries.find(x => x.id === id); if (!e || !e.dataTermino) return false;
+  const [ano, mes, dia] = e.dataTermino.split('-').map(Number), q = dia <= 15 ? 1 : 2, st = getStatus(e.empresa, ano, mes, q);
+  const info = `<p><b>OS ${esc(e.os)}</b> · ${esc(e.veiculo)}<br>${esc(e.empresa)} · ${esc(e.setor)} · término ${fmtDataHora(e.dataTermino, e.horaTermino)}</p>`;
+  const resto = '<p>A data e a hora de término serão apagadas e o carro volta para Em processo, em andamento no Início e na Lista. OS, veículo, valor, observação, início e pausas ficam como estão. Alterações não salvas neste formulário serão descartadas.</p>';
+  const ok = st !== 'Aberta'
+    ? await confirmar('Folha já ' + st.toLowerCase(), info + `<p class="alert warn">A folha da ${esc(e.empresa)} de ${qNome({ ano, mes, q })} está <b>${esc(st)}</b>. Ao reabrir, este carro sai dessa folha (${fmtValor(e.valor)}) até ser finalizado de novo.</p>` + resto, 'Reabrir mesmo assim', 'danger')
+    : await confirmar('Reabrir carro?', info + resto, 'Reabrir carro');
+  if (!ok || !e.dataTermino) return false;
+  e.dataTermino = null; e.horaTermino = null; e.situacao = SIT_INICIAL; e.updatedAt = Date.now(); normEntry(e);
+  save(); return true;
+}
+$('#btn-reabrir').onclick = async () => { const id = $('#f-id').value; if (await reabrir(id)) { resetForm(); render(); show('lista'); toast('Carro reaberto: em andamento'); } };
 function editar(id) {
   const e = DB.entries.find(x => x.id === id); if (!e) return;
   show('lancar');
@@ -571,7 +623,7 @@ function editar(id) {
   $('#f-valor').value = valorInput(e.valor); $('#f-ajudante').value = valorInput(e.ajudante); $('#f-termino').value = e.dataTermino || ''; $('#f-obs').value = e.obs || '';
   $('#f-hora-inicio').value = e.horaInicio || ''; $('#f-hora-termino').value = e.horaTermino || '';
   $('#form-title').textContent = 'Editar lançamento'; $('#btn-salvar').textContent = 'Salvar alterações';
-  $('#lbl-termino').classList.remove('hidden'); $('#btn-cancelar-edicao').classList.remove('hidden');
+  $('#lbl-termino').classList.remove('hidden'); $('#btn-cancelar-edicao').classList.remove('hidden'); $('#btn-reabrir').classList.toggle('hidden', !e.dataTermino);
   EDIT_PAUSAS = (e.pausas || []).map(p => Object.assign({}, p)); $('#f-pausas-box').classList.remove('hidden'); renderPausasEditor();
   atualizaValorPadraoBtn();
 }
@@ -614,7 +666,7 @@ form.onsubmit = async ev => {
   if (id) {
     const e = DB.entries.find(x => x.id === id);
     const tinhaPausa = !!pausaAberta(e);
-    Object.assign(e, d, { updatedAt: Date.now() }); e.pausas = EDIT_PAUSAS.map(p => Object.assign({}, p)); normEntry(e);
+    Object.assign(e, d, { updatedAt: Date.now() }); e.pausas = EDIT_PAUSAS.map(p => { const q = Object.assign({}, p); if (q.outro) { q.motivo = limpaMotivo(q.motivo); const of = MOTIVOS_PAUSA.find(m => m.toLowerCase() === q.motivo.toLowerCase()); if (of) { q.motivo = of; delete q.outro; } } return q; }); normEntry(e);
     if (tinhaPausa && !pausaAberta(e) && !e.dataTermino && MOTIVOS_PAUSA.includes(e.situacao)) e.situacao = SIT_INICIAL;
     save(); resetForm(); toast('Alterações salvas'); show('lista');
   } else {
@@ -1068,24 +1120,28 @@ function consolidadoPausas(fin) {
   const carros = fin.map(x => {
     const e = x.e, temHora = !!(e.horaInicio && e.horaTermino && x.d.horas);
     const a0 = temHora ? dtMin(`${e.dataInicio}T${e.horaInicio}`) : null, b0 = temHora ? dtMin(`${e.dataTermino}T${e.horaTermino}`) : null;
-    const porMotivo = {}; let pausaMin = 0, qtd = 0;
+    const porMotivo = {}; let pausaMin = 0, qtd = 0; // por chave do motivo (digitados agrupados pelo texto)
     (e.pausas || []).forEach(p => {
       if (!p.fim) return;
       let a = dtMin(p.inicio), b = dtMin(p.fim);
       if (temHora) { a = Math.max(a, a0); b = Math.min(b, b0); }
       const m = Math.max(0, b - a); pausaMin += m; qtd++;
-      const pm = porMotivo[p.motivo] = porMotivo[p.motivo] || { min: 0, qtd: 0 }; pm.min += m; pm.qtd++;
+      const k = chaveMotivo(p); const pm = porMotivo[k] = porMotivo[k] || { min: 0, qtd: 0 }; pm.min += m; pm.qtd++;
     });
     const totalMin = temHora ? x.d.min : null;
     return { e, temHora, totalMin, prodMin: temHora ? Math.max(0, totalMin - pausaMin) : null, pausaMin, qtd, porMotivo };
   });
-  const ordem = MOTIVOS_PAUSA.slice(); carros.forEach(c => Object.keys(c.porMotivo).forEach(m => { if (!ordem.includes(m)) ordem.push(m); }));
-  const motivos = ordem.map(m => ({ motivo: m, min: carros.reduce((s, c) => s + (c.porMotivo[m] ? c.porMotivo[m].min : 0), 0), qtd: carros.reduce((s, c) => s + (c.porMotivo[m] ? c.porMotivo[m].qtd : 0), 0) })).filter(m => m.qtd);
+  /* v18: motivos digitados aparecem com o texto da primeira vez (pela data da pausa), depois dos motivos da lista */
+  const rotulo = {}; carros.flatMap(c => (c.e.pausas || []).filter(p => p.fim)).sort((a, b) => a.inicio.localeCompare(b.inicio))
+    .forEach(p => { const k = chaveMotivo(p); if (!(k in rotulo)) rotulo[k] = ehOutro(p) ? String(p.motivo).replace(/\s+/g, ' ').trim() : p.motivo; });
+  carros.forEach(c => Object.keys(c.porMotivo).forEach(k => { c.porMotivo[k].motivo = rotulo[k] || k; c.porMotivo[k].outro = k.startsWith('outro:'); }));
+  const ordem = MOTIVOS_PAUSA.slice(); Object.keys(rotulo).forEach(k => { if (!ordem.includes(k)) ordem.push(k); });
+  const motivos = ordem.map(k => ({ motivo: rotulo[k] || k, outro: k.startsWith('outro:'), min: carros.reduce((s, c) => s + (c.porMotivo[k] ? c.porMotivo[k].min : 0), 0), qtd: carros.reduce((s, c) => s + (c.porMotivo[k] ? c.porMotivo[k].qtd : 0), 0) })).filter(m => m.qtd);
   const com = carros.filter(c => c.temHora);
   return { carros, motivos, prodMin: com.reduce((s, c) => s + c.prodMin, 0), totalMin: com.reduce((s, c) => s + c.totalMin, 0),
     pausaMin: carros.reduce((s, c) => s + c.pausaMin, 0), qtd: carros.reduce((s, c) => s + c.qtd, 0), comHora: com.length, semHora: carros.length - com.length };
 }
-const motivosTxt = c => Object.keys(c.porMotivo).map(m => `${m} ${fmtDiaHora(c.porMotivo[m].min)}${c.porMotivo[m].qtd > 1 ? ` (${c.porMotivo[m].qtd}x)` : ''}`).join('; ');
+const motivosTxt = c => Object.values(c.porMotivo).map(m => `${m.motivo} ${fmtDiaHora(m.min)}${m.qtd > 1 ? ` (${m.qtd}x)` : ''}`).join('; ');
 const fmtMedia = m => !m ? 'sem dados' : fmtDiaHora(Math.round(m.min));
 const carroTxt = x => `OS ${x.e.os} · ${x.e.veiculo}`;
 function diaSemanaNome(iso) { return DIAS_SEMANA[new Date(isoUTC(iso)).getUTCDay()].toLowerCase(); }
@@ -1102,7 +1158,7 @@ function renderRelMes() {
     <div class="num"><b id="rm-prod">${R.n ? fmtDiaHora(P.prodMin) : '0min'}</b><span>tempo de produção</span></div>
     <div class="num"><b id="rm-pausa">${fmtDiaHora(P.pausaMin)}</b><span>tempo de pausa</span></div>
     <div class="num"><b id="rm-npausas">${P.qtd}</b><span>${P.qtd === 1 ? 'pausa' : 'pausas'}</span></div></div>
-    <h3 class="sub">Pausa por motivo</h3><div id="rm-motivos">${P.motivos.length ? P.motivos.map(m => `<div class="pz-mot">${sitChip(m.motivo)}<span>${m.qtd} ${m.qtd === 1 ? 'pausa' : 'pausas'}</span><b>${fmtDiaHora(m.min)}</b></div>`).join('') : '<p class="empty">Nenhuma pausa nos carros finalizados neste mês.</p>'}</div>
+    <h3 class="sub">Pausa por motivo</h3><div id="rm-motivos">${P.motivos.length ? P.motivos.map(m => `<div class="pz-mot">${motivoChip(m.motivo, m.outro)}<span>${m.qtd} ${m.qtd === 1 ? 'pausa' : 'pausas'}</span><b>${fmtDiaHora(m.min)}</b></div>`).join('') : '<p class="empty">Nenhuma pausa nos carros finalizados neste mês.</p>'}</div>
     <h3 class="sub">Por carro</h3><div id="rm-pausas-carros">${R.n ? P.carros.map(c => `<div class="mini"><div><div class="t">OS ${esc(c.e.os)} · ${esc(c.e.veiculo)}</div><div class="s">${c.temHora ? `Produção <b>${fmtDiaHora(c.prodMin)}</b> · ` : 'Produção: sem hora · '}Pausa <b>${fmtDiaHora(c.pausaMin)}</b> (${c.qtd} ${c.qtd === 1 ? 'pausa' : 'pausas'})${c.qtd ? '<br>' + esc(motivosTxt(c)) : ''}</div></div></div>`).join('') : '<p class="empty">Nenhum carro finalizado neste mês.</p>'}</div>
     <p class="hint">Produção = término menos início, descontando as pausas. Só entram na produção os carros com hora início e hora término (${P.comHora} de ${R.n})${P.semHora ? `; ${P.semHora} sem hora mostram só as pausas` : ''}.</p></div>`;
   if (R.n) {

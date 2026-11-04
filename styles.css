@@ -195,3 +195,12 @@ h3.sub{font-size:15px;margin:14px 0 6px}
 .parado-tempo{text-align:right;min-width:84px;flex-shrink:0}
 .pz-row .row2{grid-template-columns:1fr}.pz-row label{min-width:0}.pz-row input{width:100%;box-sizing:border-box}
 .row2>label,.row3>label{min-width:0}.row2 input,.row3 input{min-width:0;max-width:100%;box-sizing:border-box}
+
+/* v18: outro motivo de pausa */
+.sit-outro{background:#f1f5f9;color:#334155;border:1px solid #cbd5e1}
+.btn.sit-opt.sit-outro{border-style:dashed;border-color:#94a3b8}.btn.sit-opt.sit-outro.atual{border-style:solid;border-color:var(--txt)}
+.pz-outro-box{border:1px solid #cbd5e1;border-radius:12px;padding:10px;background:#f8fafc;margin:0 0 4px;min-width:0}
+.pz-outro-box label{display:block;min-width:0}.pz-outro-box input,.pz-outro-txt{width:100%;box-sizing:border-box;min-width:0}
+.pz-outro-box .btn{width:100%;margin-top:8px}
+.pz-aviso{color:var(--err);font-weight:700;font-size:14px;margin:6px 0 0}
+.pausa-info,.pz-mot .chip{overflow-wrap:anywhere;word-break:break-word}
