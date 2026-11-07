@@ -7,6 +7,7 @@ function membro(estado, orgId, uid) {
 
 function podeLerValor(estado, ator, valor) {
   if (!ator || !ator.uid || !valor) return false;
+  if (ehProprietario(estado, ator.uid) && valor.ownerId !== ator.uid) return false;
   return valor.ownerId === ator.uid;
 }
 
@@ -20,8 +21,13 @@ function equipeAlcanc(estado, eu, linha) {
   return (estado.equipeMembros || []).some(m => m.userId === eu.userId && ((m.setor && m.setor === linha.setor) || (m.prestadorId && m.prestadorId === linha.ownerId)));
 }
 
+function ehProprietario(estado, uid) {
+  return (estado.proprietarios || []).some(p => p.userId === uid && p.ativo && p.bootstrap === 'servidor');
+}
+
 function podeLerLancamento(estado, ator, linha) {
   if (!ator || !ator.uid || !linha) return false;
+  if (ehProprietario(estado, ator.uid) && linha.ownerId !== ator.uid) return false;
   if (linha.ownerId === ator.uid) return true;
   const share = compartilhamentoVisivel(estado, linha.id);
   if (!share) return false;

@@ -1,5 +1,5 @@
 const CACHE = 'folha-zero-v20';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './persistencia.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './vendor/jspdf.umd.min.js', './vendor/jsQR.js'];
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './persistencia.js', './acesso.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './vendor/jspdf.umd.min.js', './vendor/jsQR.js'];
 self.addEventListener('install', e => {
   // cache: 'reload' evita pegar arquivos velhos do cache HTTP ao instalar a versão nova
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));

@@ -58,7 +58,7 @@ Não liga login Google, e-mail e senha, backup automático de verdade, restaura�
 
 ## Testes executados
 
-`npm test`: 24 testes, todos passando.
+`npm test`: 28 testes, todos passando.
 
 - Backup idempotente, quota, prévia, confirmação, cópia inválida e aborto da restauração.
 - Conta vazia, mescla sem duplicar id, troca de usuário, logout, ack parcial e ack divergente.
@@ -67,11 +67,18 @@ Não liga login Google, e-mail e senha, backup automático de verdade, restaura�
 - INOVA Blindagem ausente do catálogo real. Pausas iguais às do app. Gerente limitado a uma empresa. Consentimento com finalidade, versão, data e escopo. Revogação sem apagar o local e sem prometer apagar a produção já retida.
 - Um aparelho ativo só como regra de servidor. Ativar outro pede confirmação. A nota local não apaga `folhazero_v1`.
 - Login Google e e-mail não enviam nada. E-mail fica pendente de SMTP. Plano Pro e PITR são recusados. Free não promete backup gerenciado.
+- Proprietário da plataforma: bootstrap só com ordem explícita de servidor, nunca por nome ou e-mail. Ele aprova, suspende e revoga acessos e registra degustação ou licença manual sem preço. Não lê carros nem valores. O gerente só gere membros da própria empresa se o proprietário permitir. Convite real não é enviado. A tela de acesso fica desligada sem projeto e não guarda senha.
 - Regressão do relatório v19: 7 empresas, 13 setores, fim de expediente fora do tempo útil, reabertura preservando OS, valor e pausas, PDF ainda mensal.
 - v20: novembro de 2026 tem 6 semanas, a segunda é 02/11 a 08/11, sem "Semana N de M", quinzenas 1ª e 2ª, situação filtrada, resumo mensal intacto.
 - Rede dos testes não chama o contador.
 
 Captura mobile em 390x844, com carros fictícios OS-TESTE, operador "Pessoa Exemplo". O contador e qualquer host Supabase foram bloqueados.
+
+## O que funciona agora e o que continua pendente
+
+No aparelho, sem projeto: a seção Acesso explica que o login está desligado, os campos ficam inativos e a senha não é gravada. O painel do proprietário não abre pelo nome de quem usa o app. Com uma sessão de teste marcada como confirmada pelo servidor, a lista local de solicitações e de licenças pode ser alterada só em `folhazero_admin_meta`. Isso não cria conta, não envia convite e não mostra carros nem valores.
+
+Pendente de integração real: criar o projeto Free, ligar a chave pública, provar o login Google, validar o SMTP próprio, publicar a função de borda e aplicar as migrações. O conector do Supabase segue sem autenticação. Nada disso foi simulado como se já estivesse no ar.
 
 ## Testes não executados
 

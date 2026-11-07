@@ -998,6 +998,13 @@ $('#p-fechar').onclick = () => fecharQuinzena(PQ.ano, PQ.mes, PQ.q);
 $('#fo-fechar').onclick = () => fecharQuinzena(+$('#fo-ano').value, +$('#fo-mes').value, +$('#fo-q').value);
 
 /* ---------- ajustes e backup ---------- */
+function renderAcesso() {
+  const box = $('#acesso-corpo');
+  if (!box || !window.FolhaAcesso) return;
+  const antes = localStorage.getItem('folhazero_v1');
+  box.innerHTML = FolhaAcesso.htmlSecao(window, localStorage);
+  if (localStorage.getItem('folhazero_v1') !== antes) console.error('acesso alterou folhazero_v1');
+}
 function copiaOnlineLigada() {
   try { return !!(window.FolhaPersistencia && FolhaPersistencia.configHabilitada(window)); }
   catch (_) { return false; }
@@ -1009,6 +1016,7 @@ function renderAjustes() {
   if (aviso) aviso.textContent = copiaOnlineLigada()
     ? 'Há uma configuração de cópia online neste aparelho. Ela só conta como concluída depois de conferida. Uma conta vazia não substitui os lançamentos daqui.'
     : 'A cópia online ainda não está ligada. Os lançamentos continuam somente neste aparelho. Uma falha de rede não apaga o que já está salvo.';
+  renderAcesso();
   fillSelect($('#s-setor-op'), SETORES); $('#s-setor-op').value = DB.settings.setorOperador || 'Tapeçaria';
   $('#s-valores').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${valorInput(DB.settings.valorPadrao[e])}" placeholder="sem padrão"></div>`).join('');
   $('#s-aliquotas').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${getAliquota(e) ? String(getAliquota(e)).replace('.', ',') : ''}" placeholder="0 %"></div>`).join('');
@@ -1018,6 +1026,23 @@ function renderAjustes() {
   if (diasDesde(lb) > 7) $('#s-backup-info').innerHTML += ' <b style="color:var(--warn)">Recomendado fazer um backup agora.</b>';
 }
 $('#btn-salvar-op').onclick = () => { const v = $('#s-operador').value.trim(); if (!v) return toast('Digite o nome do operador'); DB.settings.operador = v; DB.settings.setorOperador = $('#s-setor-op').value || 'Tapeçaria'; save(); renderBrand(); toast('Operador salvo'); contadorAbertura(); };
+$('#acesso-card').addEventListener('click', ev => {
+  const btn = ev.target.closest('[data-acesso]');
+  if (!btn || !window.FolhaAcesso) return;
+  const antes = localStorage.getItem('folhazero_v1');
+  const r = FolhaAcesso.clicar(window, localStorage, btn.getAttribute('data-acesso'), btn.getAttribute('data-id') || '');
+  if (localStorage.getItem('folhazero_v1') !== antes) localStorage.setItem('folhazero_v1', antes);
+  const msg = $('#acesso-msg');
+  if (msg && r && r.texto) msg.textContent = r.texto;
+  renderAcesso();
+});
+$('#acesso-card').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const senha = $('#acesso-senha');
+  if (senha) senha.value = '';
+  const msg = $('#acesso-msg');
+  if (msg) msg.textContent = 'O login não foi enviado. A senha não fica salva neste aparelho e o projeto ainda não está ligado.';
+});
 $('#btn-salvar-aliq').onclick = () => {
   const al = {}; let erro = false;
   document.querySelectorAll('#s-aliquotas input').forEach(i => { const v = parseValor(i.value.replace('%', '')); if (Number.isNaN(v) || (v != null && (v < 0 || v >= 100))) erro = true; else if (v) al[i.dataset.emp] = v; });

@@ -168,6 +168,11 @@ h2.sec{margin:16px 4px 8px}
 .rm-per-nav{display:flex;align-items:center;gap:8px;margin:8px 0}
 .rm-per-seta{width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border-radius:999px;font-size:22px;line-height:1}
 .rm-per-intervalo{flex:1;text-align:center;font-weight:800;font-size:15px;color:var(--pri)}
+.acesso-aviso{background:#e8f2fb;color:#1a4a70;border:1px solid #bcd7ef;border-radius:12px;padding:12px;font-size:14px;margin:0 0 10px}
+.acesso-lista{display:flex;flex-direction:column;gap:8px}
+.acesso-item{background:var(--bg);border-radius:10px;padding:10px}
+.acesso-item b{display:block}
+.acesso-item span{color:var(--mut);font-size:13px}
 
 /* v15: leitor de QR da OS */
 .qr-btn{white-space:nowrap}

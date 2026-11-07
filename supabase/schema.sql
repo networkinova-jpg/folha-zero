@@ -446,6 +446,158 @@ revoke insert, update, delete on equipes from anon, authenticated;
 revoke insert, update, delete on equipe_membros from anon, authenticated;
 grant select on equipes, equipe_membros, consentimentos, compartilhamentos, aparelhos to authenticated;
 
+-- Proprietário da plataforma: só metadados de acesso. Não lê carros nem valores.
+-- O bootstrap não é concedido ao cliente. Roda no SQL do titular, depois da config.
+create table if not exists proprietarios (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  ativo boolean not null default true,
+  bootstrap text not null default 'servidor' check (bootstrap = 'servidor'),
+  criado_em timestamptz not null default now()
+);
+
+create table if not exists solicitacoes_acesso (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  nome text not null default '',
+  org_id uuid references organizacoes (id),
+  papel_pedido text not null check (papel_pedido in ('prestador', 'equipe', 'gerente')),
+  status text not null default 'pendente' check (status in ('pendente', 'aprovada', 'recusada', 'suspensa', 'revogada')),
+  decidido_por uuid references auth.users (id),
+  criado_em timestamptz not null default now()
+);
+
+-- Degustação e licença manual. Sem preço e sem pagamento.
+create table if not exists licencas (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  org_id uuid references organizacoes (id),
+  tipo text not null check (tipo in ('degustacao', 'licenca_manual')),
+  status text not null check (status in ('ativa', 'suspensa', 'revogada')),
+  inicio date,
+  fim date,
+  observacao text not null default ''
+);
+
+create table if not exists permissoes_org (
+  org_id uuid primary key references organizacoes (id) on delete cascade,
+  pode_gerir_membros boolean not null default false
+);
+
+alter table proprietarios enable row level security;
+alter table solicitacoes_acesso enable row level security;
+alter table licencas enable row level security;
+alter table permissoes_org enable row level security;
+
+create or replace function folha_sou_proprietario()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from proprietarios where user_id = auth.uid() and ativo
+  );
+$$;
+
+create or replace function folha_bootstrap_proprietario(p_uid uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_uid is null then
+    raise exception 'uid ausente';
+  end if;
+  if exists (select 1 from proprietarios where ativo) then
+    raise exception 'ja existe proprietario';
+  end if;
+  insert into proprietarios (user_id, ativo, bootstrap) values (p_uid, true, 'servidor');
+end;
+$$;
+
+create or replace function folha_decidir_solicitacao(p_id uuid, p_acao text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_status text;
+begin
+  if not folha_sou_proprietario() then
+    raise exception 'somente proprietario';
+  end if;
+  v_status := case p_acao
+    when 'aprovar' then 'aprovada'
+    when 'recusar' then 'recusada'
+    when 'suspender' then 'suspensa'
+    when 'revogar' then 'revogada'
+    else null
+  end;
+  if v_status is null then
+    raise exception 'acao invalida';
+  end if;
+  update solicitacoes_acesso
+     set status = v_status, decidido_por = auth.uid()
+   where id = p_id;
+  if not found then
+    raise exception 'solicitacao ausente';
+  end if;
+end;
+$$;
+
+create or replace function folha_registrar_licenca(
+  p_user uuid, p_org uuid, p_tipo text, p_status text, p_inicio date, p_fim date, p_obs text
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not folha_sou_proprietario() then
+    raise exception 'somente proprietario';
+  end if;
+  if p_tipo not in ('degustacao', 'licenca_manual') then
+    raise exception 'tipo invalido';
+  end if;
+  insert into licencas (user_id, org_id, tipo, status, inicio, fim, observacao)
+  values (p_user, p_org, p_tipo, coalesce(p_status, 'ativa'), p_inicio, p_fim, coalesce(p_obs, ''));
+end;
+$$;
+
+revoke all on function folha_bootstrap_proprietario(uuid) from public, anon, authenticated;
+revoke all on function folha_decidir_solicitacao(uuid, text) from public, anon;
+revoke all on function folha_registrar_licenca(uuid, uuid, text, text, date, date, text) from public, anon;
+grant execute on function folha_decidir_solicitacao(uuid, text) to authenticated;
+grant execute on function folha_registrar_licenca(uuid, uuid, text, text, date, date, text) to authenticated;
+
+create policy proprietario_le_a_si on proprietarios
+  for select to authenticated
+  using (user_id = auth.uid());
+
+create policy solicitacao_proprietario on solicitacoes_acesso
+  for select to authenticated
+  using (folha_sou_proprietario());
+
+create policy licenca_leitura on licencas
+  for select to authenticated
+  using (user_id = auth.uid() or folha_sou_proprietario());
+
+create policy permissao_leitura on permissoes_org
+  for select to authenticated
+  using (folha_sou_proprietario() or folha_sou_gerente(org_id));
+
+revoke insert, update, delete on proprietarios from anon, authenticated;
+revoke insert, update, delete on solicitacoes_acesso from anon, authenticated;
+revoke insert, update, delete on licencas from anon, authenticated;
+revoke insert, update, delete on permissoes_org from anon, authenticated;
+grant select on proprietarios, solicitacoes_acesso, licencas, permissoes_org to authenticated;
+
+-- Não criar policy de proprietário em lancamentos, valores, pausas ou ajustes.
+-- Com RLS ativo, a ausência de policy nega esse papel.
+
 -- Produtividade sem colunas de dinheiro. security invoker: respeita a RLS de lancamentos.
 create or replace view v_producao_sem_valor
 with (security_invoker = true) as
