@@ -180,6 +180,7 @@
         <input type="file" id="file-import" accept="application/json,.json" class="hidden">
       </div>
       <p class="hint">No celular, "Exportar backup" abre o compartilhamento: escolha o app do OneDrive. Salve em OneDrive &gt; Documentos &gt; Folha Zero. O arquivo tem sempre o mesmo nome (folha-zero-backup.json) e substitui o anterior.</p>
+      <p class="hint" id="s-nuvem-info">A cópia online ainda não está ligada. Os lançamentos continuam somente neste aparelho. Uma falha de rede não apaga o que já está salvo.</p>
     </div>
     <div class="card">
       <h2>Dados do aplicativo</h2>
@@ -191,7 +192,7 @@
     </div>
     <div class="card">
       <h2>Sobre</h2>
-      <p class="hint">Folha Zero versão 19. Os dados ficam salvos somente neste aparelho. Faça backup com frequência.</p>
+      <p class="hint">Folha Zero versão 20. Os lançamentos continuam salvos somente neste aparelho. A cópia online ainda não está ligada e não protege o que ainda não foi enviado. Faça backup com frequência.</p>
     </div>
   </section>
 
@@ -258,6 +259,7 @@
 <div id="toast" class="toast hidden no-print"></div>
 <button type="button" id="upd-banner" class="upd-banner hidden no-print">Nova versão pronta, toque para atualizar</button>
 <script src="vendor/jspdf.umd.min.js"></script>
+<script src="persistencia.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

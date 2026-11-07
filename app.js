@@ -16,7 +16,7 @@ const OUTRO_MAX = 60; // v18: motivo de pausa digitado ("Outro motivo")
 const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 const HM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DT_RE = /^\d{4}-\d\d-\d\dT([01]\d|2[0-3]):[0-5]\d$/; // data e hora local 'AAAA-MM-DDTHH:MM'
-const APP_VERSAO = 19;
+const APP_VERSAO = 20;
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const LINHAS_POR_PAGINA = 16;
 const KEY = 'folhazero_v1';
@@ -998,9 +998,17 @@ $('#p-fechar').onclick = () => fecharQuinzena(PQ.ano, PQ.mes, PQ.q);
 $('#fo-fechar').onclick = () => fecharQuinzena(+$('#fo-ano').value, +$('#fo-mes').value, +$('#fo-q').value);
 
 /* ---------- ajustes e backup ---------- */
+function copiaOnlineLigada() {
+  try { return !!(window.FolhaPersistencia && FolhaPersistencia.configHabilitada(window)); }
+  catch (_) { return false; }
+}
 function renderAjustes() {
   $('#s-operador').value = DB.settings.operador || '';
   $('#s-contador-hint').classList.toggle('hidden', !CONTADOR_URL);
+  const aviso = $('#s-nuvem-info');
+  if (aviso) aviso.textContent = copiaOnlineLigada()
+    ? 'Há uma configuração de cópia online neste aparelho. Ela só conta como concluída depois de conferida. Uma conta vazia não substitui os lançamentos daqui.'
+    : 'A cópia online ainda não está ligada. Os lançamentos continuam somente neste aparelho. Uma falha de rede não apaga o que já está salvo.';
   fillSelect($('#s-setor-op'), SETORES); $('#s-setor-op').value = DB.settings.setorOperador || 'Tapeçaria';
   $('#s-valores').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${valorInput(DB.settings.valorPadrao[e])}" placeholder="sem padrão"></div>`).join('');
   $('#s-aliquotas').innerHTML = EMPRESAS.map(e => `<div class="valrow"><span>${esc(e)}</span><input type="text" inputmode="decimal" autocomplete="off" data-emp="${esc(e)}" value="${getAliquota(e) ? String(getAliquota(e)).replace('.', ',') : ''}" placeholder="0 %"></div>`).join('');
@@ -1177,6 +1185,67 @@ const motivosTxt = (c, semFim) => Object.values(c.porMotivo).filter(m => !(semFi
 const fmtMedia = m => !m ? 'sem dados' : fmtDiaHora(Math.round(m.min));
 const carroTxt = x => `OS ${x.e.os} · ${x.e.veiculo}`;
 function diaSemanaNome(iso) { return DIAS_SEMANA[new Date(isoUTC(iso)).getUTCDay()].toLowerCase(); }
+/* v20: Semana (segunda a domingo, recortada no mês), Quinzena (1ª e 2ª) e Mês.
+   O seletor muda só o gráfico por dia e a situação dos carros. O restante e o PDF seguem o mês.
+   O estado fica na memória: não entra em folhazero_v1. */
+let RPER = { modo: 'mes', idx: 0 };
+function isoDia(ano, mes, dia) { return `${ano}-${pad(mes)}-${pad(dia)}`; }
+function fmtDiaMes(iso) { const p = iso.split('-'); return `${p[2]}/${p[1]}`; }
+function fatiasDoMes(ano, mes) {
+  const ultimo = ultimoDia(ano, mes);
+  const semanas = [];
+  let d = 1;
+  while (d <= ultimo) {
+    const dow = new Date(Date.UTC(ano, mes - 1, d)).getUTCDay();
+    const fim = Math.min(ultimo, d + (dow === 0 ? 0 : 7 - dow));
+    semanas.push({ ini: isoDia(ano, mes, d), fim: isoDia(ano, mes, fim) });
+    d = fim + 1;
+  }
+  return {
+    semanas,
+    quinzenas: [
+      { ini: isoDia(ano, mes, 1), fim: isoDia(ano, mes, Math.min(15, ultimo)), qual: '1ª' },
+      { ini: isoDia(ano, mes, Math.min(16, ultimo)), fim: isoDia(ano, mes, ultimo), qual: '2ª' }
+    ],
+    mes: [{ ini: isoDia(ano, mes, 1), fim: isoDia(ano, mes, ultimo) }]
+  };
+}
+function listaDoModo(fatias, modo) {
+  if (modo === 'semana') return fatias.semanas;
+  if (modo === 'quinzena') return fatias.quinzenas;
+  return fatias.mes;
+}
+function idxPadrao(ano, mes, modo) {
+  const lista = listaDoModo(fatiasDoMes(ano, mes), modo);
+  const hoje = hojeISO();
+  const i = lista.findIndex(f => hoje >= f.ini && hoje <= f.fim);
+  return i >= 0 ? i : 0;
+}
+function textoPeriodo(fatia, modo) {
+  const intervalo = `${fmtDiaMes(fatia.ini)} a ${fmtDiaMes(fatia.fim)}`;
+  if (modo === 'quinzena') return `${fatia.qual} quinzena: ${intervalo}`;
+  return `Período: ${intervalo}`;
+}
+function statsNoIntervalo(R, ini, fim) {
+  const semana = [0, 0, 0, 0, 0, 0, 0], porData = {};
+  let nFin = 0;
+  R.fin.forEach(x => {
+    const dt = x.e.dataTermino;
+    if (dt < ini || dt > fim) return;
+    nFin++;
+    semana[new Date(isoUTC(dt)).getUTCDay()]++;
+    porData[dt] = (porData[dt] || 0) + 1;
+  });
+  const maxSem = Math.max(0, ...semana);
+  const diasSemanaTop = maxSem ? DIAS_SEMANA.filter((_, i) => semana[i] === maxSem) : [];
+  let melhorData = null;
+  Object.keys(porData).sort().forEach(k => { if (!melhorData || porData[k] > melhorData.n) melhorData = { data: k, n: porData[k] }; });
+  const porSituacao = {};
+  SITUACOES.forEach(s => porSituacao[s] = 0);
+  porSituacao[SIT_FIN] = nFin;
+  R.parados.forEach(x => { if (x.e.dataInicio <= fim) porSituacao[x.e.situacao]++; });
+  return { ini, fim, semana, maxSem, diasSemanaTop, melhorData, porSituacao, nFin };
+}
 function renderRelMes() {
   const R = relatorioMes(+$('#rm-ano').value, +$('#rm-mes').value, $('#rm-empresa').value);
   const titulo = `${MESES[R.mes - 1]} de ${R.ano}${R.emp ? ' · ' + R.emp : ''}`;
@@ -1198,11 +1267,29 @@ function renderRelMes() {
     h += `<div class="card"><h2>Maior e menor tempo</h2>
       <div class="rel-row" id="rm-rapido"><div class="h"><span>Mais rápido</span><span>${esc(fmtDiaHora(R.rapido.d))}${R.rapido.d.util ? ' (tempo útil)' : ''}</span></div><div class="s">${esc(carroTxt(R.rapido))} · ${esc(R.rapido.e.empresa)} · término ${fmtData(R.rapido.e.dataTermino)}</div></div>
       <div class="rel-row" id="rm-lento"><div class="h"><span>Mais demorado</span><span>${esc(fmtDiaHora(R.lento.d))}${R.lento.d.util ? ' (tempo útil)' : ''}</span></div><div class="s">${esc(carroTxt(R.lento))} · ${esc(R.lento.e.empresa)} · término ${fmtData(R.lento.e.dataTermino)}</div></div></div>`;
-    h += `<div class="card"><h2>Por dia da semana</h2><div id="rm-semana">${[1, 2, 3, 4, 5, 6, 0].map(i => `<div class="wk-row${R.semana[i] && R.semana[i] === R.maxSem ? ' top' : ''}"><span>${DIAS_SEMANA[i]}</span><div class="bar"><i style="width:${R.maxSem ? Math.round(R.semana[i] / R.maxSem * 100) : 0}%"></i></div><b>${R.semana[i]}</b></div>`).join('')}</div>
-      <p class="hint" id="rm-melhor">Dia da semana mais forte: <b>${esc(R.diasSemanaTop.join(', '))}</b> (${R.maxSem} ${R.maxSem === 1 ? 'carro' : 'carros'}). Melhor dia: <b>${fmtData(R.melhorData.data)}</b> (${diaSemanaNome(R.melhorData.data)}), ${R.melhorData.n} ${R.melhorData.n === 1 ? 'carro' : 'carros'}.</p></div>`;
   }
-  h += `<div class="card"><h2>Situação dos carros</h2><div class="sit-grid" id="rm-situacoes">${SITUACOES.map(s => `<div class="sit-cnt">${sitChip(s)}<b>${R.porSituacao[s]}</b></div>`).join('')}</div>
-    <p class="hint">Finalizado conta os carros finalizados no mês. As outras situações contam os carros ainda em aberto.</p></div>`;
+  const fatias = fatiasDoMes(R.ano, R.mes);
+  const listaPer = listaDoModo(fatias, RPER.modo);
+  if (RPER.idx > listaPer.length - 1) RPER.idx = listaPer.length - 1;
+  if (RPER.idx < 0) RPER.idx = 0;
+  const fatia = listaPer[RPER.idx];
+  const S = statsNoIntervalo(R, fatia.ini, fatia.fim);
+  const hintDias = S.nFin
+    ? `Dia da semana mais forte: <b>${esc(S.diasSemanaTop.join(', '))}</b> (${S.maxSem} ${S.maxSem === 1 ? 'carro' : 'carros'}). Melhor dia: <b>${fmtData(S.melhorData.data)}</b> (${diaSemanaNome(S.melhorData.data)}), ${S.melhorData.n} ${S.melhorData.n === 1 ? 'carro' : 'carros'}.`
+    : 'Nenhum carro finalizado neste período.';
+  h += `<div class="card" id="rm-periodo-card"><div class="rm-per-head"><h2>Por dia da semana</h2><div class="seg compact" id="rm-per-seg" role="tablist" aria-label="Período do gráfico">${['semana', 'quinzena', 'mes'].map(modo => {
+    const rotulo = modo === 'semana' ? 'Semana' : modo === 'quinzena' ? 'Quinzena' : 'Mês';
+    const on = RPER.modo === modo;
+    return `<button type="button" data-modo="${modo}" role="tab" aria-selected="${on ? 'true' : 'false'}" class="${on ? 'active' : ''}">${rotulo}</button>`;
+  }).join('')}</div></div>
+    <div class="rm-per-nav"><button type="button" class="btn ghost small rm-per-seta" id="rm-per-prev" aria-label="Período anterior"${RPER.idx <= 0 ? ' disabled' : ''}>‹</button><div class="rm-per-intervalo" id="rm-per-intervalo">${esc(textoPeriodo(fatia, RPER.modo))}</div><button type="button" class="btn ghost small rm-per-seta" id="rm-per-next" aria-label="Próximo período"${RPER.idx >= listaPer.length - 1 ? ' disabled' : ''}>›</button></div>
+    <div id="rm-semana">${[1, 2, 3, 4, 5, 6, 0].map(i => `<div class="wk-row${S.semana[i] && S.semana[i] === S.maxSem ? ' top' : ''}"><span>${DIAS_SEMANA[i]}</span><div class="bar"><i style="width:${S.maxSem ? Math.round(S.semana[i] / S.maxSem * 100) : 0}%"></i></div><b>${S.semana[i]}</b></div>`).join('')}</div>
+    <p class="hint" id="rm-melhor">${hintDias}</p></div>`;
+  const hintSit = RPER.modo === 'mes'
+    ? 'Finalizado conta os carros finalizados no mês. As outras situações contam os carros ainda em aberto.'
+    : 'Finalizado conta os carros com término neste período. As outras situações contam os carros ainda em aberto que já tinham começado até o fim do período.';
+  h += `<div class="card"><h2>Situação dos carros</h2><div class="sit-grid" id="rm-situacoes">${SITUACOES.map(s => `<div class="sit-cnt">${sitChip(s)}<b>${S.porSituacao[s]}</b></div>`).join('')}</div>
+    <p class="hint" id="rm-sit-hint">${hintSit}</p></div>`;
   h += `<div class="card"><h2>Carros parados <span class="badge">${R.parados.length}</span></h2><div id="rm-parados">${R.parados.length ? R.parados.map(x => `<div class="mini${x.e.situacao === SIT_DESTAQUE ? ' is-etapa' : ''}"><div><div class="t">${esc(carroTxt(x))}</div><div class="s">${esc(x.e.empresa)} · ${esc(x.e.setor)} · início ${fmtDataHora(x.e.dataInicio, x.e.horaInicio)}</div>${sitChip(x.e.situacao)}</div><div class="s parado-tempo"><b>${esc(fmtDiaHora(x.d))}</b><br>${x.d.util ? 'parado (tempo útil)' : 'parado'}</div></div>`).join('') : '<p class="empty">Nenhum carro parado.</p>'}</div></div>`;
   h += `<div class="card"><h2>Tempo por carro</h2>${R.temFora ? '<p class="hint" id="rm-util-hint">Tempo útil: término menos início sem o fora do expediente (fim de expediente).</p>' : ''}<div id="rm-lista">${R.n ? R.fin.map(x => `<div class="mini"><div><div class="t">${esc(carroTxt(x))}</div><div class="s">${esc(x.e.empresa)} · ${esc(x.e.setor)} · ${fmtDataHora(x.e.dataInicio, x.e.horaInicio)} até ${fmtDataHora(x.e.dataTermino, x.e.horaTermino)}</div></div><div class="s parado-tempo"><b>${esc(fmtDiaHora(x.d))}</b>${x.d.util ? '<br>tempo útil' : ''}</div></div>`).join('') : '<p class="empty">Nenhum carro finalizado neste mês.</p>'}</div></div>`;
   $('#rm-out').innerHTML = h;
@@ -1267,6 +1354,20 @@ function gerarPdfRelatorio() {
   return { doc, nome: `Relatorio-${R.ano}-${pad(R.mes)}${R.emp ? '-' + R.emp.replace(/\s+/g, '-') : ''}.pdf` };
 }
 $('#rm-pdf').onclick = () => { try { const { doc, nome } = gerarPdfRelatorio(); baixarDoc(doc, nome); } catch (e) { console.error(e); toast('Não foi possível gerar o PDF'); } };
+$('#rm-out').addEventListener('click', ev => {
+  const modoBtn = ev.target.closest('#rm-per-seg [data-modo]');
+  if (modoBtn) {
+    const modo = modoBtn.getAttribute('data-modo');
+    if (modo !== RPER.modo) {
+      RPER.modo = modo;
+      RPER.idx = idxPadrao(+$('#rm-ano').value, +$('#rm-mes').value, modo);
+    }
+    renderRelMes();
+    return;
+  }
+  if (ev.target.closest('#rm-per-prev')) { RPER.idx -= 1; renderRelMes(); return; }
+  if (ev.target.closest('#rm-per-next')) { RPER.idx += 1; renderRelMes(); }
+});
 
 /* ---------- exemplo e limpar ---------- */
 function addDias(iso, n) { const [y, m, d] = iso.split('-').map(Number); const t = new Date(y, m - 1, d + n); return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`; }

@@ -1,0 +1,11 @@
+{
+  "name": "folha-zero",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/persistencia.test.js test/politica.test.js test/relatorio.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "playwright-core": "^1.56.1"
+  }
+}
