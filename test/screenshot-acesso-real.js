@@ -39,10 +39,10 @@ function servir() {
   const email = await page.textContent('#st-email');
   const snap = await page.textContent('#st-snapshot');
   if (!/alcançado/.test(conexao)) throw new Error('conexao: ' + conexao);
-  if (!/Pendente/.test(google)) throw new Error('google: ' + google);
+  if (!/Google ligado no projeto/.test(google)) throw new Error('google: ' + google);
   if (!/Criar conta está desligado/.test(email)) throw new Error('email: ' + email);
-  if (!/ainda não existe/.test(snap)) throw new Error('snapshot: ' + snap);
-  if (await page.locator('#btn-google').isEnabled()) throw new Error('google habilitado');
+  if (!/bloqueado neste teste de login/.test(snap)) throw new Error('snapshot: ' + snap);
+  if (!(await page.locator('#btn-google').isEnabled())) throw new Error('google desabilitado fora da origem publicada');
   await page.locator('main').screenshot({ path: '/opt/cursor/artifacts/folha-zero-acesso-teste-mobile.png' });
   if (await page.locator('#btn-enviar').isEnabled()) throw new Error('envio habilitado sem sessao e sem tabela');
   if (chamadas.length) throw new Error('houve signup: ' + chamadas.length);

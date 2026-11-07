@@ -21,8 +21,16 @@ test('a tela usa só a chave publishable e o projeto responde sem criar conta', 
   const ajustes = await fetch(cfg.url + '/auth/v1/settings', { headers });
   assert.equal(ajustes.status, 200);
   const j = await ajustes.json();
-  assert.equal(j.external.google, false);
+  assert.equal(j.external.google, true);
   assert.equal(j.external.github, false);
+  const tela = fs.readFileSync(path.join(__dirname, '..', 'acesso-teste.js'), 'utf8');
+  assert.equal(tela.includes("flowType: 'pkce'"), true);
+  assert.equal(tela.includes('enviarCopiaAutorizada'), false);
+  assert.equal(tela.includes('folhazero_v1'), false);
+  const login = fs.readFileSync(path.join(__dirname, '..', 'login-google.js'), 'utf8');
+  assert.equal(login.includes('signUp'), false);
+  assert.equal(login.includes('folhazero_v1'), false);
+  assert.equal(login.includes('networkinova-jpg.github.io'), true);
   const tabela = await fetch(cfg.url + '/rest/v1/snapshots_privados?select=id&limit=0', { headers });
-  assert.equal(tabela.status, 404);
+  assert.equal(tabela.status, 401);
 });

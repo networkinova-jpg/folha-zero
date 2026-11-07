@@ -28,582 +28,103 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// persistencia.js
-var require_persistencia = __commonJS({
-  "persistencia.js"(exports) {
+// login-google.js
+var require_login_google = __commonJS({
+  "login-google.js"(exports, module) {
     (function(root) {
-      const KEY = "folhazero_v1";
-      const GUARD = "folhazero_guardiao";
-      const COPIA_PREFIX = "folhazero_copia_";
-      const MOTIVOS_PAUSA_OFICIAIS = ["Faltando pe\xE7a", "Faltando vidro", "Problemas el\xE9tricos", "Problemas com vidro", "Aguardando etapa anterior", "Aguardando vidraceiro", "Aguardando ajuste da produ\xE7\xE3o", "Impasse na resolu\xE7\xE3o de um problema"];
-      const MOTIVO_FIM_EXPEDIENTE = "Fim de expediente";
-      const OUTRO_MAX = 60;
-      const NOME_EQUIPE = "Equipe de Produ\xE7\xE3o";
-      function texto2(valor) {
-        return valor == null ? null : String(valor);
-      }
-      async function sha2562(valor) {
-        const dados = new TextEncoder().encode(String(valor));
-        const buf = await crypto.subtle.digest("SHA-256", dados);
-        return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
-      }
-      function guardiaoVazio() {
-        return {
-          versao: 1,
-          backups: [],
-          vinculo: null,
-          fila: [],
-          nuvem: { estado: "desligada", sha256Enviado: null, sha256Confirmado: null, ultimoErro: null }
-        };
-      }
-      function lerGuardiao(storage) {
+      const ORIGEM_PRODUCAO = "networkinova-jpg.github.io";
+      function origemProducao(origem) {
         try {
-          const raw = storage.getItem(GUARD);
-          if (!raw) return guardiaoVazio();
-          const g = JSON.parse(raw);
-          if (!g || typeof g !== "object") return guardiaoVazio();
-          g.versao = 1;
-          g.backups = Array.isArray(g.backups) ? g.backups : [];
-          g.fila = Array.isArray(g.fila) ? g.fila : [];
-          g.vinculo = g.vinculo && typeof g.vinculo === "object" ? g.vinculo : null;
-          g.nuvem = Object.assign(guardiaoVazio().nuvem, g.nuvem || {});
-          return g;
+          return new URL(origem).hostname === ORIGEM_PRODUCAO;
         } catch (_) {
-          return guardiaoVazio();
+          return true;
         }
       }
-      function gravarGuardiao(storage, g) {
-        const antes = storage.getItem(KEY);
-        storage.setItem(GUARD, JSON.stringify(g));
-        if (storage.getItem(KEY) !== antes) throw new Error("guardiao alterou folhazero_v1");
+      function retornoDaPagina(location2) {
+        const u = new URL(location2.href);
+        return u.origin + u.pathname;
       }
-      function lerConfig(ambiente) {
-        const c = ambiente && ambiente.FOLHA_ZERO_NUVEM;
-        if (!c || typeof c !== "object") return null;
-        const chaves = Object.keys(c);
-        if (chaves.some((k) => /service[_-]?role|senha|secret/i.test(k))) return { erro: "recusado", motivo: "segredo_proibido" };
-        if (c.anonKey != null && /service_role/i.test(String(c.anonKey))) return { erro: "recusado", motivo: "chave_suspeita" };
-        if (!c.url || !c.anonKey) return null;
-        return { url: String(c.url), anonKey: String(c.anonKey), habilitada: true };
-      }
-      function configHabilitada(ambiente) {
-        const c = lerConfig(ambiente);
-        return !!(c && c.habilitada && !c.erro);
-      }
-      function resumir(doc) {
-        const d = doc && typeof doc === "object" ? doc : {};
-        const entries = Array.isArray(d.entries) ? d.entries : [];
-        return {
-          lancamentos: entries.length,
-          ids: entries.map((e) => e && e.id).filter(Boolean),
-          quinzenas: d.quinzenas && typeof d.quinzenas === "object" ? Object.keys(d.quinzenas).length : 0,
-          descontos: d.descontos && typeof d.descontos === "object" ? Object.keys(d.descontos).length : 0
-        };
-      }
-      function lerDocumento(raw) {
-        if (raw == null || raw === "") return { entries: [], quinzenas: {}, descontos: {}, settings: {} };
-        const doc = JSON.parse(raw);
-        if (!doc || typeof doc !== "object" || !Array.isArray(doc.entries)) {
-          const err = new Error("documento invalido");
-          err.codigo = "documento_invalido";
-          throw err;
-        }
-        return doc;
-      }
-      async function escreverCopia(storage, conteudo, motivo) {
-        const textoCopia = conteudo == null ? "" : String(conteudo);
-        const sha = await sha2562(textoCopia);
-        const g = lerGuardiao(storage);
-        const ja = g.backups.find((b) => b.sha256 === sha && b.motivo === motivo && storage.getItem(b.chave) === textoCopia);
-        if (ja) return { ok: true, id: ja.id, sha256: sha, chave: ja.chave, repetido: true };
-        const id = "b" + sha.slice(0, 16);
-        const chave = COPIA_PREFIX + id;
-        const origem = storage.getItem(KEY);
+      function podeIniciarGoogle(location2) {
+        if (!location2 || !location2.href) return { ok: false, motivo: "sem_pagina" };
+        if (origemProducao(location2.origin)) return { ok: false, motivo: "origem_producao" };
+        let redirectTo;
         try {
-          storage.setItem(chave, textoCopia);
-        } catch (e) {
-          return { ok: false, motivo: "quota_ou_escrita" };
-        }
-        if (storage.getItem(chave) !== textoCopia) return { ok: false, motivo: "copia_nao_confere" };
-        if (storage.getItem(KEY) !== origem) return { ok: false, motivo: "origem_alterada" };
-        g.backups.push({ id, criadoEm: (/* @__PURE__ */ new Date()).toISOString(), bytes: textoCopia.length, sha256: sha, chave, motivo });
-        try {
-          gravarGuardiao(storage, g);
+          redirectTo = retornoDaPagina(location2);
         } catch (_) {
-          return { ok: false, motivo: "quota_ou_escrita", id, sha256: sha, chave };
+          return { ok: false, motivo: "pagina_invalida" };
         }
-        return { ok: true, id, sha256: sha, chave, repetido: false };
+        if (origemProducao(redirectTo)) return { ok: false, motivo: "origem_producao" };
+        return { ok: true, redirectTo };
       }
-      async function prepararMigracao(storage) {
-        const origem = storage.getItem(KEY);
-        const copia = await escreverCopia(storage, origem == null ? "" : String(origem), "pre_migracao");
-        if (!copia.ok) return copia;
-        if (storage.getItem(KEY) !== origem) return { ok: false, motivo: "origem_alterada" };
-        const g = lerGuardiao(storage);
-        if (!(g.nuvem.estado === "verificada" && g.nuvem.sha256Confirmado === copia.sha256)) {
-          g.nuvem.estado = "backup_local";
-          g.nuvem.ultimoErro = null;
-        }
+      function mensagemDeErro(codigo) {
+        if (codigo === "access_denied") return "Entrada cancelada no Google. Nenhum token foi mostrado.";
+        return "N\xE3o foi poss\xEDvel entrar com o Google. Nenhum token foi mostrado.";
+      }
+      function erroVisivelNaUrl(href) {
+        const u = new URL(href);
+        const hash = new URLSearchParams((u.hash || "").replace(/^#/, ""));
+        const erro = u.searchParams.get("error") || hash.get("error");
+        const code = u.searchParams.get("error_code") || hash.get("error_code");
+        if (!erro && !code) return null;
+        return mensagemDeErro(erro || code);
+      }
+      function limparUrl(href) {
+        return retornoDaPagina({ href });
+      }
+      function mensagemDeSessao(href, sessao, aviso) {
+        if (aviso) return aviso;
+        const u = new URL(href);
+        const hash = new URLSearchParams((u.hash || "").replace(/^#/, ""));
+        const tinhaCodigo = u.searchParams.has("code") || hash.has("code");
+        if (tinhaCodigo && !sessao) return "O retorno chegou, mas a sess\xE3o n\xE3o foi criada. Nenhum token foi mostrado.";
+        if (sessao) return "Sess\xE3o iniciada neste navegador.";
+        return null;
+      }
+      function urlDeGoogleAceita(urlAutorizacao, projetoUrl, redirectTo) {
+        let destino;
+        let projeto;
         try {
-          gravarGuardiao(storage, g);
+          destino = new URL(urlAutorizacao);
+          projeto = new URL(projetoUrl);
         } catch (_) {
-          return { ok: false, motivo: "quota_ou_escrita", backupId: copia.id, sha256: copia.sha256 };
+          return false;
         }
-        let ids = [];
-        if (origem) {
-          try {
-            ids = resumir(lerDocumento(origem)).ids;
-          } catch (_) {
-            return { ok: false, motivo: "documento_invalido", backupId: copia.id };
+        if (destino.origin !== projeto.origin) return false;
+        if (destino.pathname !== "/auth/v1/authorize") return false;
+        if (destino.searchParams.get("provider") !== "google") return false;
+        if (destino.searchParams.get("redirect_to") !== redirectTo) return false;
+        return true;
+      }
+      async function iniciarGoogle(cliente, location2, navegar) {
+        const permitido = podeIniciarGoogle(location2);
+        if (!permitido.ok) return permitido;
+        const { data, error } = await cliente.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: permitido.redirectTo,
+            skipBrowserRedirect: true
           }
-        }
-        return { ok: true, backupId: copia.id, sha256: copia.sha256, repetido: copia.repetido, ids, bytes: origem == null ? 0 : String(origem).length };
-      }
-      function preverRestauracao(storage, backupId) {
-        const g = lerGuardiao(storage);
-        const b = g.backups.find((x) => x.id === backupId);
-        if (!b) return { ok: false, motivo: "backup_ausente" };
-        const copia = storage.getItem(b.chave);
-        if (copia == null) return { ok: false, motivo: "copia_ausente" };
-        let doc;
-        try {
-          doc = lerDocumento(copia);
-        } catch (_) {
-          return { ok: false, motivo: "copia_invalida" };
-        }
-        const atualRaw = storage.getItem(KEY);
-        let atual = { lancamentos: 0, ids: [], quinzenas: 0, descontos: 0 };
-        if (atualRaw) {
-          try {
-            atual = resumir(lerDocumento(atualRaw));
-          } catch (_) {
-            atual = { lancamentos: 0, ids: [], quinzenas: 0, descontos: 0, aviso: "atual_invalido" };
-          }
-        }
-        const copiaResumo = resumir(doc);
-        const setCopia = new Set(copiaResumo.ids);
-        return {
-          ok: true,
-          backupId,
-          atual,
-          copia: copiaResumo,
-          idsQueEntram: copiaResumo.ids.filter((id) => !atual.ids.includes(id)),
-          idsQueSaem: atual.ids.filter((id) => !setCopia.has(id))
-        };
-      }
-      async function restaurarBackup(storage, backupId, confirmar) {
-        if (confirmar !== true) return { ok: false, motivo: "sem_confirmacao" };
-        const previsto = preverRestauracao(storage, backupId);
-        if (!previsto.ok) return previsto;
-        const g = lerGuardiao(storage);
-        const b = g.backups.find((x) => x.id === backupId);
-        const copia = storage.getItem(b.chave);
-        const atual = storage.getItem(KEY);
-        const seguranca = await escreverCopia(storage, atual == null ? "" : String(atual), "pre_restauracao");
-        if (!seguranca.ok) return { ok: false, motivo: "backup_atual_falhou" };
-        if (storage.getItem(KEY) !== atual) return { ok: false, motivo: "origem_alterada", backupAtual: seguranca.id };
-        try {
-          storage.setItem(KEY, copia);
-        } catch (_) {
-          try {
-            if (atual == null) storage.removeItem(KEY);
-            else storage.setItem(KEY, atual);
-          } catch (__) {
-          }
-          return { ok: false, motivo: "escrita_falhou", backupAtual: seguranca.id };
-        }
-        if (storage.getItem(KEY) !== copia) {
-          try {
-            if (atual == null) storage.removeItem(KEY);
-            else storage.setItem(KEY, atual);
-          } catch (__) {
-          }
-          return { ok: false, motivo: "verificacao_falhou", backupAtual: seguranca.id };
-        }
-        return { ok: true, backupId, backupAtual: seguranca.id, resumo: previsto.copia };
-      }
-      function atualizadoEm(e) {
-        return String(e && e.updatedAt != null ? e.updatedAt : "");
-      }
-      function mesclarEntradas(a, b) {
-        const map = /* @__PURE__ */ new Map();
-        const semId = [];
-        const vistosSemId = /* @__PURE__ */ new Set();
-        function por(lista) {
-          (lista || []).forEach((e) => {
-            if (!e || typeof e !== "object") return;
-            if (!e.id) {
-              const marca = JSON.stringify(e);
-              if (!vistosSemId.has(marca)) {
-                vistosSemId.add(marca);
-                semId.push(e);
-              }
-              return;
-            }
-            const prev = map.get(e.id);
-            if (!prev || atualizadoEm(e) > atualizadoEm(prev)) map.set(e.id, e);
-          });
-        }
-        por(a);
-        por(b);
-        return Array.from(map.values()).concat(semId);
-      }
-      function unirMapas(a, b) {
-        const out = Object.assign({}, a || {});
-        Object.keys(b || {}).forEach((k) => {
-          if (!(k in out)) out[k] = b[k];
         });
-        return out;
-      }
-      function mesclarEstado(a, b) {
-        return {
-          entries: mesclarEntradas(a && a.entries, b && b.entries),
-          quinzenas: unirMapas(a && a.quinzenas, b && b.quinzenas),
-          descontos: unirMapas(a && a.descontos, b && b.descontos)
-        };
-      }
-      function decidirAplicacaoRemota(localDoc, remoto) {
-        const localN = localDoc && Array.isArray(localDoc.entries) ? localDoc.entries.length : 0;
-        const remotoN = remoto && Array.isArray(remoto.entries) ? remoto.entries.length : 0;
-        if (!remoto || typeof remoto !== "object") return { acao: "manter_local", motivo: "remoto_ausente" };
-        if (remotoN === 0 && localN > 0) return { acao: "manter_local", motivo: "conta_vazia" };
-        return { acao: "mesclar", motivo: "remoto_com_dados" };
-      }
-      function aplicarRemoto(localRaw, remoto, escrever) {
-        const local = lerDocumento(localRaw || '{"entries":[]}');
-        const decisao = decidirAplicacaoRemota(local, remoto);
-        if (decisao.acao !== "mesclar") return Object.assign({ escreveu: false }, decisao);
-        const mesclado = mesclarEstado(local, remoto);
-        const textoNovo = JSON.stringify(Object.assign({}, local, mesclado));
-        if (typeof escrever === "function") escrever(textoNovo);
-        return { acao: "mesclar", escreveu: typeof escrever === "function", entries: mesclado.entries.length, ids: mesclado.entries.map((e) => e.id).filter(Boolean) };
-      }
-      function vincularLegado(storage, uid, confirma) {
-        if (confirma !== true) return { ok: false, motivo: "sem_confirmacao" };
-        if (!uid || typeof uid !== "string") return { ok: false, motivo: "uid_invalido" };
-        const antes = storage.getItem(KEY);
-        const g = lerGuardiao(storage);
-        if (g.vinculo && g.vinculo.uid && g.vinculo.uid !== uid) return { ok: false, motivo: "outro_perfil" };
-        g.vinculo = { uid, confirmadoEm: (/* @__PURE__ */ new Date()).toISOString() };
-        gravarGuardiao(storage, g);
-        if (storage.getItem(KEY) !== antes) return { ok: false, motivo: "origem_alterada" };
-        return { ok: true, uid };
-      }
-      function sair(storage) {
-        const antes = storage.getItem(KEY);
-        const g = lerGuardiao(storage);
-        g.vinculo = null;
-        g.fila = [];
-        g.nuvem.estado = "desligada";
-        g.nuvem.sha256Enviado = null;
-        gravarGuardiao(storage, g);
-        if (storage.getItem(KEY) !== antes) throw new Error("logout alterou folhazero_v1");
-        return { ok: true, dadosLocaisPreservados: true };
-      }
-      function trocarUsuario(storage, novoUid) {
-        const antes = storage.getItem(KEY);
-        const g = lerGuardiao(storage);
-        if (g.vinculo && g.vinculo.uid && g.vinculo.uid !== novoUid) {
-          g.vinculo = null;
-          g.fila = [];
-          g.nuvem.estado = "desligada";
-          g.nuvem.sha256Enviado = null;
-          gravarGuardiao(storage, g);
-          if (storage.getItem(KEY) !== antes) throw new Error("troca alterou folhazero_v1");
-          return { ok: true, acao: "desvinculou", dadosLocaisPreservados: true };
+        if (error || !data || !data.url) return { ok: false, motivo: "oauth_falhou", mensagem: mensagemDeErro(error && error.code) };
+        if (!urlDeGoogleAceita(data.url, cliente.supabaseUrl, permitido.redirectTo)) {
+          return { ok: false, motivo: "destino_recusado" };
         }
-        if (storage.getItem(KEY) !== antes) throw new Error("troca alterou folhazero_v1");
-        return { ok: true, acao: "mesmo_ou_sem_vinculo", dadosLocaisPreservados: true };
+        if (typeof navegar === "function") navegar(data.url);
+        return { ok: true, redirectTo: permitido.redirectTo };
       }
-      function marcarConcluida(registro, ack) {
-        if (!ack || ack.verificado !== true) return { ok: false, motivo: "sem_ack", estado: "aguardando_ack" };
-        if (!registro || ack.sha256 !== registro.sha256) return { ok: false, motivo: "sha_diverge", estado: "aguardando_ack" };
-        if (!Array.isArray(ack.ids) || !Array.isArray(registro.ids)) return { ok: false, motivo: "ids_ausentes", estado: "aguardando_ack" };
-        const esp = registro.ids.slice().sort().join("|");
-        const rec = ack.ids.slice().sort().join("|");
-        if (esp !== rec) return { ok: false, motivo: "ids_divergem", estado: "aguardando_ack" };
-        return { ok: true, estado: "verificada" };
-      }
-      function ehFimExpediente(texto3) {
-        const n = String(texto3 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
-        return ["fim de expediente", "fim do expediente", "fim de turno", "fim do turno"].includes(n);
-      }
-      function pausaParaPlano(p) {
-        const bruto = String(p && p.motivo || "").replace(/\s+/g, " ").trim();
-        if (ehFimExpediente(bruto)) return { motivo: MOTIVO_FIM_EXPEDIENTE, outro: false, inicio: p && p.inicio || null, fim: p && p.fim || null };
-        if (!p.outro && MOTIVOS_PAUSA_OFICIAIS.includes(bruto)) return { motivo: bruto, outro: false, inicio: p.inicio || null, fim: p.fim || null };
-        return { motivo: (bruto || "Sem motivo").slice(0, OUTRO_MAX), outro: true, inicio: p && p.inicio || null, fim: p && p.fim || null };
-      }
-      function guardarConsentimento(storage, registro) {
-        if (!registro || registro.confirma !== true) return { ok: false, motivo: "sem_consentimento" };
-        if (!registro.finalidade || !registro.versaoTexto || !registro.escopo || !registro.orgId) return { ok: false, motivo: "consentimento_incompleto" };
-        const antes = storage.getItem(KEY);
-        const g = lerGuardiao(storage);
-        g.consentimentos = Array.isArray(g.consentimentos) ? g.consentimentos : [];
-        const item = {
-          orgId: registro.orgId,
-          finalidade: registro.finalidade,
-          versaoTexto: registro.versaoTexto,
-          escopo: registro.escopo,
-          aceitoEm: registro.aceitoEm || (/* @__PURE__ */ new Date()).toISOString(),
-          revogadoEm: null
-        };
-        g.consentimentos.push(item);
-        gravarGuardiao(storage, g);
-        if (storage.getItem(KEY) !== antes) throw new Error("consentimento alterou folhazero_v1");
-        return { ok: true, registro: item, apagouLocal: false };
-      }
-      function notarAparelho(storage, aparelhoId, evento) {
-        const antes = storage.getItem(KEY);
-        const g = lerGuardiao(storage);
-        g.aparelho = { id: aparelhoId, evento, em: (/* @__PURE__ */ new Date()).toISOString(), imposicao: "nenhuma_no_aparelho" };
-        gravarGuardiao(storage, g);
-        if (storage.getItem(KEY) !== antes) throw new Error("aparelho alterou folhazero_v1");
-        return { ok: true, apagouLocal: false, imposicaoLocal: false, limite: "revogacao_offline_nao_e_imediata" };
-      }
-      function decidirLogin(pedido) {
-        const p = pedido || {};
-        if (p.senha || p.accessToken || p.serviceRole || p.refreshToken) return { ok: false, motivo: "credencial_recusada", enviou: false };
-        if (p.plano && p.plano !== "free") return { ok: false, motivo: "plano_nao_permitido", enviou: false };
-        if (p.metodo === "email") return { ok: false, motivo: "smtp_pendente", enviou: false };
-        if (p.metodo === "google") return { ok: false, motivo: "aguardando_projeto_autorizado", enviou: false };
-        return { ok: false, motivo: "sem_projeto", enviou: false };
-      }
-      function planoSupabasePermitido(plano) {
-        if (plano === "free") return { ok: true, plano: "free", regiaoPretendida: "sa-east-1", backupGerenciado: false, semLimite: false };
-        return { ok: false, motivo: "plano_nao_permitido" };
-      }
-      function planoDeLinhas(doc, uid) {
-        if (!uid || typeof uid !== "string") {
-          const err = new Error("uid obrigatorio");
-          err.codigo = "uid_invalido";
-          throw err;
-        }
-        const entries = Array.isArray(doc && doc.entries) ? doc.entries : [];
-        const lancamentos = [];
-        const valores = [];
-        const pausas = [];
-        entries.forEach((e) => {
-          if (!e || !e.id) return;
-          lancamentos.push({
-            client_id: e.id,
-            owner_id: uid,
-            org_id: null,
-            empresa: e.empresa || "",
-            setor: e.setor || "",
-            os: e.os || "",
-            veiculo: e.veiculo || "",
-            data_inicio: e.dataInicio || null,
-            hora_inicio: e.horaInicio || null,
-            data_termino: e.dataTermino || null,
-            hora_termino: e.horaTermino || null,
-            situacao: e.situacao || null,
-            obs: e.obs || ""
-          });
-          valores.push({ client_id: e.id, owner_id: uid, valor: e.valor == null ? null : e.valor, ajudante: e.ajudante == null ? null : e.ajudante });
-          (e.pausas || []).forEach((p) => pausas.push(Object.assign({ client_id: e.id, owner_id: uid }, pausaParaPlano(p))));
-        });
-        const ajustes = {
-          owner_id: uid,
-          quinzenas: doc && doc.quinzenas || {},
-          descontos: doc && doc.descontos || {},
-          valor_padrao: doc && doc.settings && doc.settings.valorPadrao || {},
-          aliquota: doc && doc.settings && doc.settings.aliquota || {}
-        };
-        return { lancamentos, valores, pausas, ajustes };
-      }
-      async function enviarSeConfigurado(storage, ambiente, transport) {
-        const cfg = lerConfig(ambiente);
-        if (!cfg || cfg.erro || !cfg.habilitada) return { ok: false, motivo: cfg && cfg.erro ? cfg.motivo : "desabilitada", rede: false };
-        if (typeof transport !== "function") return { ok: false, motivo: "sem_transporte", rede: false };
-        const g0 = lerGuardiao(storage);
-        if (!g0.vinculo || !g0.vinculo.uid) return { ok: false, motivo: "sem_vinculo", rede: false };
-        const prep = await prepararMigracao(storage);
-        if (!prep.ok) return prep;
-        const g = lerGuardiao(storage);
-        if (g.nuvem.estado === "verificada" && g.nuvem.sha256Confirmado === prep.sha256) {
-          return { ok: true, repetido: true, estado: "verificada", rede: false, sha256: prep.sha256 };
-        }
-        const mutationId = "m-" + prep.sha256;
-        const fila = g.fila.find((f) => f.mutationId === mutationId);
-        const ids = fila && Array.isArray(fila.idsPendentes) ? fila.idsPendentes.slice() : prep.ids.slice();
-        let resp;
-        try {
-          resp = await transport({ url: cfg.url, mutationId, sha256: prep.sha256, ids, uid: g0.vinculo.uid });
-        } catch (e) {
-          const item = { mutationId, idsPendentes: ids, estado: "erro", ultimoErro: "rede" };
-          const i = g.fila.findIndex((f) => f.mutationId === mutationId);
-          if (i >= 0) g.fila[i] = item;
-          else g.fila.push(item);
-          g.nuvem.estado = "erro";
-          g.nuvem.ultimoErro = "rede";
-          g.nuvem.sha256Enviado = prep.sha256;
-          gravarGuardiao(storage, g);
-          return { ok: false, motivo: "rede", estado: "erro", sha256: prep.sha256 };
-        }
-        if (resp && Array.isArray(resp.idsPendentes) && resp.idsPendentes.length && resp.verificado !== true) {
-          const item = { mutationId, idsPendentes: resp.idsPendentes.slice(), estado: "parcial", ultimoErro: null };
-          const i = g.fila.findIndex((f) => f.mutationId === mutationId);
-          if (i >= 0) g.fila[i] = item;
-          else g.fila.push(item);
-          g.nuvem.estado = "aguardando_ack";
-          g.nuvem.sha256Enviado = prep.sha256;
-          g.nuvem.sha256Confirmado = null;
-          gravarGuardiao(storage, g);
-          return { ok: false, motivo: "parcial", estado: "aguardando_ack", idsPendentes: resp.idsPendentes.slice() };
-        }
-        const marca = marcarConcluida({ sha256: prep.sha256, ids: prep.ids }, resp);
-        if (!marca.ok) {
-          g.nuvem.estado = "aguardando_ack";
-          g.nuvem.sha256Enviado = prep.sha256;
-          g.nuvem.sha256Confirmado = null;
-          g.nuvem.ultimoErro = marca.motivo;
-          gravarGuardiao(storage, g);
-          return marca;
-        }
-        g.fila = g.fila.filter((f) => f.mutationId !== mutationId);
-        g.nuvem.estado = "verificada";
-        g.nuvem.sha256Enviado = prep.sha256;
-        g.nuvem.sha256Confirmado = prep.sha256;
-        g.nuvem.ultimoErro = null;
-        gravarGuardiao(storage, g);
-        return { ok: true, estado: "verificada", sha256: prep.sha256, repetido: false };
-      }
-      root.FolhaPersistencia = {
-        KEY,
-        GUARD,
-        lerConfig,
-        configHabilitada,
-        prepararMigracao,
-        preverRestauracao,
-        restaurarBackup,
-        mesclarEntradas,
-        mesclarEstado,
-        decidirAplicacaoRemota,
-        aplicarRemoto,
-        vincularLegado,
-        sair,
-        trocarUsuario,
-        marcarConcluida,
-        MOTIVOS_PAUSA_OFICIAIS,
-        MOTIVO_FIM_EXPEDIENTE,
-        NOME_EQUIPE,
-        pausaParaPlano,
-        guardarConsentimento,
-        notarAparelho,
-        decidirLogin,
-        planoSupabasePermitido,
-        planoDeLinhas,
-        enviarSeConfigurado,
-        resumir,
-        sha256: sha2562
+      const api = {
+        ORIGEM_PRODUCAO,
+        origemProducao,
+        podeIniciarGoogle,
+        retornoDaPagina,
+        erroVisivelNaUrl,
+        limparUrl,
+        mensagemDeSessao,
+        urlDeGoogleAceita,
+        iniciarGoogle,
+        mensagemDeErro
       };
-    })(typeof globalThis !== "undefined" ? globalThis : exports);
-  }
-});
-
-// snapshot-remoto.js
-var require_snapshot_remoto = __commonJS({
-  "snapshot-remoto.js"(exports, module) {
-    (function(root) {
-      function P() {
-        if (!root.FolhaPersistencia) throw new Error("persistencia ausente");
-        return root.FolhaPersistencia;
-      }
-      function chavePublicaAceita(chave) {
-        if (!chave || typeof chave !== "string") return false;
-        if (/service_role/i.test(chave)) return false;
-        return chave.startsWith("sb_publishable_");
-      }
-      async function enviarCopiaAutorizada(storage, autorizado, remoto) {
-        if (autorizado !== true) return { ok: false, motivo: "sem_autorizacao", enviou: false, verificado: false };
-        const antes = storage.getItem(P().KEY);
-        if (antes == null || antes === "") return { ok: false, motivo: "sem_dados_locais", enviou: false, verificado: false };
-        const prep = await P().prepararMigracao(storage);
-        if (!prep.ok) return { ok: false, motivo: prep.motivo || "backup_local_falhou", enviou: false, verificado: false };
-        if (storage.getItem(P().KEY) !== antes) return { ok: false, motivo: "origem_alterada", enviou: false, verificado: false };
-        let doc;
-        try {
-          doc = JSON.parse(antes);
-        } catch (_) {
-          return { ok: false, motivo: "documento_invalido", enviou: false, verificado: false };
-        }
-        let gravado;
-        try {
-          gravado = await remoto.gravar({ sha256: prep.sha256, bytes: antes.length, documento: doc });
-        } catch (_) {
-          return { ok: false, motivo: "rede", enviou: false, verificado: false };
-        }
-        if (!gravado || !gravado.ok) return { ok: false, motivo: gravado && gravado.motivo || "gravacao_falhou", enviou: true, verificado: false };
-        let lido;
-        try {
-          lido = await remoto.ler(prep.sha256);
-        } catch (_) {
-          return { ok: false, motivo: "ack_ausente", enviou: true, verificado: false };
-        }
-        if (!lido || !lido.ok || lido.sha256 !== prep.sha256) return { ok: false, motivo: "ack_divergente", enviou: true, verificado: false };
-        const entradas = Array.isArray(doc.entries) ? doc.entries.length : 0;
-        if (lido.lancamentos !== entradas) return { ok: false, motivo: "ack_divergente", enviou: true, verificado: false };
-        return { ok: true, enviou: true, verificado: true, sha256: prep.sha256, lancamentos: entradas };
-      }
-      async function prepararRestauracao(storage, sha2562, remoto) {
-        const lista = await remoto.listar();
-        const localRaw = storage.getItem(P().KEY);
-        let locais = 0;
-        if (localRaw) {
-          try {
-            locais = (JSON.parse(localRaw).entries || []).length;
-          } catch (_) {
-            locais = 0;
-          }
-        }
-        if (!lista.ok) return { ok: false, motivo: lista.motivo || "lista_falhou", acao: "manter_local" };
-        if (!lista.itens.length && locais > 0) return { ok: false, motivo: "conta_vazia", acao: "manter_local", escreveu: false };
-        const item = lista.itens.find((i) => i.sha256 === sha2562);
-        if (!item) return { ok: false, motivo: "nao_encontrado", acao: "manter_local" };
-        const lido = await remoto.ler(sha2562);
-        if (!lido || !lido.ok || lido.sha256 !== sha2562) return { ok: false, motivo: "ack_divergente", acao: "manter_local" };
-        return {
-          ok: true,
-          acao: "prever",
-          preview: { sha256: sha2562, lancamentos: lido.lancamentos, bytes: lido.bytes },
-          escreveu: false
-        };
-      }
-      async function restaurarConfirmada(storage, sha2562, confirmar, remoto) {
-        const previsto = await prepararRestauracao(storage, sha2562, remoto);
-        if (!previsto.ok) return previsto;
-        if (confirmar !== true) return { ok: false, motivo: "sem_confirmacao", preview: previsto.preview, escreveu: false };
-        const antes = storage.getItem(P().KEY);
-        const seg = await P().prepararMigracao(storage);
-        if (!seg.ok) return { ok: false, motivo: "backup_atual_falhou", escreveu: false };
-        const lido = await remoto.ler(sha2562);
-        if (!lido || !lido.ok || typeof lido.documento !== "object") {
-          return { ok: false, motivo: "ack_divergente", escreveu: false };
-        }
-        const texto2 = JSON.stringify(lido.documento);
-        try {
-          storage.setItem(P().KEY, texto2);
-        } catch (_) {
-          try {
-            if (antes == null) storage.removeItem(P().KEY);
-            else storage.setItem(P().KEY, antes);
-          } catch (__) {
-          }
-          return { ok: false, motivo: "quota_ou_escrita", escreveu: false };
-        }
-        if (storage.getItem(P().KEY) !== texto2) {
-          try {
-            if (antes == null) storage.removeItem(P().KEY);
-            else storage.setItem(P().KEY, antes);
-          } catch (__) {
-          }
-          return { ok: false, motivo: "rollback", escreveu: false };
-        }
-        return { ok: true, escreveu: true, sha256: sha2562, backupAtual: seg.backupId };
-      }
-      const api = { chavePublicaAceita, enviarCopiaAutorizada, prepararRestauracao, restaurarConfirmada };
-      root.FolhaSnapshot = api;
+      root.FolhaLoginGoogle = api;
       if (typeof module !== "undefined" && module.exports) module.exports = api;
     })(typeof globalThis !== "undefined" ? globalThis : exports);
   }
@@ -21524,24 +21045,33 @@ function shouldShowDeprecationWarning() {
 if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and below are deprecated and will no longer be supported in future versions of @supabase/supabase-js. Please upgrade to Node.js 22 or later. For more information, visit: https://github.com/orgs/supabase/discussions/45715");
 
 // acesso-teste.js
-var import_persistencia = __toESM(require_persistencia());
-var import_snapshot_remoto = __toESM(require_snapshot_remoto());
+var import_login_google = __toESM(require_login_google());
 import { FOLHA_ZERO_TESTE } from "./acesso-teste-config.js";
-var S = globalThis.FolhaSnapshot;
+var G = globalThis.FolhaLoginGoogle;
 var $ = (id) => document.getElementById(id);
+function chavePublicaAceita(chave) {
+  if (!chave || typeof chave !== "string") return false;
+  if (/service_role/i.test(chave)) return false;
+  return chave.startsWith("sb_publishable_");
+}
 function texto(id, valor) {
   const el = $(id);
   if (el) el.textContent = valor;
 }
 function clienteSeguro() {
   const cfg = FOLHA_ZERO_TESTE || {};
-  if (!cfg.url || !S.chavePublicaAceita(cfg.publishableKey)) return null;
+  if (!cfg.url || !chavePublicaAceita(cfg.publishableKey)) return null;
   return createClient(cfg.url, cfg.publishableKey, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: "pkce"
+    }
   });
 }
 async function sondar(cliente) {
-  const out = { conectado: false, google: false, email: false, signup: false, snapshot: "desconhecido", sessao: null };
+  const out = { conectado: false, google: false, email: false, signup: false, sessao: null };
   try {
     const saude = await fetch(cliente.supabaseUrl + "/auth/v1/health", {
       headers: { apikey: cliente.supabaseKey, Authorization: "Bearer " + cliente.supabaseKey }
@@ -21556,10 +21086,6 @@ async function sondar(cliente) {
       out.email = !!(j.external && j.external.email);
       out.signup = j.disable_signup === false;
     }
-    const tab = await fetch(cliente.supabaseUrl + "/rest/v1/snapshots_privados?select=id&limit=0", {
-      headers: { apikey: cliente.supabaseKey, Authorization: "Bearer " + cliente.supabaseKey }
-    });
-    out.snapshot = tab.status === 404 ? "ausente" : tab.ok ? "presente" : "erro";
     const sess = await cliente.auth.getSession();
     out.sessao = sess.data && sess.data.session ? sess.data.session.user.id : null;
   } catch (_) {
@@ -21567,55 +21093,51 @@ async function sondar(cliente) {
   }
   return out;
 }
-function remotoDe(cliente) {
-  return {
-    async gravar(item) {
-      const { data: sess } = await cliente.auth.getSession();
-      const uid = sess.session && sess.session.user.id;
-      if (!uid) return { ok: false, motivo: "sem_sessao" };
-      const { error } = await cliente.from("snapshots_privados").upsert({
-        owner_id: uid,
-        sha256: item.sha256,
-        bytes: item.bytes,
-        documento: item.documento
-      }, { onConflict: "owner_id,sha256" });
-      if (error) return { ok: false, motivo: "gravacao_falhou" };
-      return { ok: true };
-    },
-    async ler(sha) {
-      const { data, error } = await cliente.from("snapshots_privados").select("sha256,bytes,documento").eq("sha256", sha).limit(1);
-      if (error || !data || !data[0]) return { ok: false, motivo: "nao_encontrado" };
-      const doc = data[0].documento || {};
-      return { ok: true, sha256: data[0].sha256, bytes: data[0].bytes, lancamentos: (doc.entries || []).length, documento: doc };
-    },
-    async listar() {
-      const { data, error } = await cliente.from("snapshots_privados").select("sha256,bytes,criado_em").order("criado_em", { ascending: false });
-      if (error) return { ok: false, motivo: "lista_falhou", itens: [] };
-      return { ok: true, itens: data || [] };
-    }
-  };
-}
 function pintar(estado) {
   texto("st-conexao", estado.conectado ? "Projeto de teste alcan\xE7ado. Banco de contas ainda sem usu\xE1rios criados por esta tela." : "N\xE3o foi poss\xEDvel falar com o projeto.");
-  texto("st-google", estado.google ? "Google ligado no projeto." : "Pendente: o provedor Google est\xE1 desligado. N\xE3o h\xE1 client id nesta etapa e esta tela n\xE3o usa outro provedor.");
+  const bloqueada = G.origemProducao(window.location.origin);
+  texto("st-google", bloqueada ? "Esta origem \xE9 a do aplicativo publicado. O login de teste n\xE3o abre aqui." : estado.google ? "Google ligado no projeto. O retorno \xE9 esta mesma p\xE1gina." : "Pendente: o provedor Google est\xE1 desligado no projeto.");
   texto("st-email", "Entrar com e-mail e senha s\xF3 funciona para uma conta que j\xE1 exista. Criar conta est\xE1 desligado: a confirma\xE7\xE3o sairia pelo envio padr\xE3o, que n\xE3o serve para clientes.");
-  texto("st-snapshot", estado.snapshot === "ausente" ? "A tabela de c\xF3pia privada ainda n\xE3o existe no projeto. O envio fica bloqueado at\xE9 a migra\xE7\xE3o incremental ser aplicada." : estado.snapshot === "presente" ? "A tabela de c\xF3pia privada responde. Nada \xE9 enviado sem a caixa de autoriza\xE7\xE3o." : "N\xE3o deu para confirmar a tabela de c\xF3pia.");
+  texto("st-snapshot", "Envio de c\xF3pia bloqueado neste teste de login. Nenhum lan\xE7amento \xE9 lido nem enviado.");
   texto("st-sessao", estado.sessao ? "Sess\xE3o ativa neste navegador." : "Sem sess\xE3o de usu\xE1rio do Folha Zero.");
   const google = $("btn-google");
-  if (google) google.disabled = !estado.google;
+  if (google) google.disabled = bloqueada || !estado.google;
   const entrar = $("btn-entrar");
   if (entrar) entrar.disabled = !estado.email;
   const enviar = $("btn-enviar");
-  if (enviar) enviar.disabled = estado.snapshot !== "presente" || !estado.sessao;
+  if (enviar) enviar.disabled = true;
+  const listar = $("btn-listar");
+  if (listar) listar.disabled = true;
+  const confirmar = $("btn-confirmar");
+  if (confirmar) confirmar.disabled = true;
 }
 async function iniciar() {
-  if (!S.chavePublicaAceita(FOLHA_ZERO_TESTE && FOLHA_ZERO_TESTE.publishableKey)) {
+  const hrefInicial = window.location.href;
+  const avisoUrl = G.erroVisivelNaUrl(hrefInicial);
+  if (avisoUrl) {
+    const limpa = G.limparUrl(hrefInicial);
+    if (limpa !== hrefInicial) window.history.replaceState(window.history.state, "", limpa);
+  }
+  if (!chavePublicaAceita(FOLHA_ZERO_TESTE && FOLHA_ZERO_TESTE.publishableKey)) {
     texto("st-conexao", "A chave p\xFAblica foi recusada. Nada foi conectado.");
     return;
   }
   const cliente = clienteSeguro();
   const estado = await sondar(cliente);
   pintar(estado);
+  const msg = G.mensagemDeSessao(hrefInicial, estado.sessao, avisoUrl);
+  if (msg) texto("st-login", msg);
+  if (!avisoUrl && /[?&#]code=/.test(hrefInicial)) {
+    const limpa = G.limparUrl(window.location.href);
+    if (limpa !== window.location.href) window.history.replaceState(window.history.state, "", limpa);
+  }
+  $("btn-google").addEventListener("click", async () => {
+    texto("st-login", "Abrindo o Google. O retorno ser\xE1 esta mesma p\xE1gina.");
+    const r = await G.iniciarGoogle(cliente, window.location, (url) => {
+      window.location.assign(url);
+    });
+    if (!r.ok) texto("st-login", r.mensagem || (r.motivo === "origem_producao" ? "Login de teste bloqueado nesta origem." : "N\xE3o foi poss\xEDvel abrir o Google."));
+  });
   $("form-entrar").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const email = $("acesso-email").value.trim();
@@ -21630,47 +21152,6 @@ async function iniciar() {
     await cliente.auth.signOut();
     texto("st-login", "Sess\xE3o encerrada neste navegador. Os lan\xE7amentos locais n\xE3o foram apagados.");
     pintar(await sondar(cliente));
-  });
-  $("btn-enviar").addEventListener("click", async () => {
-    if (!$("autorizo").checked) {
-      texto("st-copia", "Nada enviado. Marque a autoriza\xE7\xE3o expl\xEDcita antes.");
-      return;
-    }
-    texto("st-copia", "Enviando s\xF3 depois da c\xF3pia local e da confer\xEAncia.");
-    const r = await S.enviarCopiaAutorizada(localStorage, true, remotoDe(cliente));
-    texto("st-copia", r.verificado ? "C\xF3pia conferida no projeto. O documento local permanece." : "N\xE3o conclu\xEDdo: " + (r.motivo || "falha") + ". O documento local n\xE3o foi apagado.");
-  });
-  $("btn-listar").addEventListener("click", async () => {
-    const lista = await remotoDe(cliente).listar();
-    const ul = $("lista-copias");
-    ul.innerHTML = "";
-    if (!lista.ok || !lista.itens.length) {
-      ul.innerHTML = "<li>Nenhuma c\xF3pia desta sess\xE3o. O documento local n\xE3o foi alterado.</li>";
-      return;
-    }
-    lista.itens.forEach((item) => {
-      const li = document.createElement("li");
-      li.textContent = "FIXTURE remota " + item.sha256.slice(0, 12) + "\u2026 " + item.bytes + " bytes";
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = "Ver pr\xE9via";
-      b.addEventListener("click", async () => {
-        const previa = await S.prepararRestauracao(localStorage, item.sha256, remotoDe(cliente));
-        texto("st-restauro", previa.ok ? "Pr\xE9via: " + previa.preview.lancamentos + " lan\xE7amentos. Nada foi escrito." : "Sem escrita: " + previa.motivo);
-        $("btn-confirmar").dataset.sha = previa.ok ? item.sha256 : "";
-      });
-      li.appendChild(b);
-      ul.appendChild(li);
-    });
-  });
-  $("btn-confirmar").addEventListener("click", async () => {
-    const sha = $("btn-confirmar").dataset.sha;
-    if (!sha) {
-      texto("st-restauro", "Escolha uma pr\xE9via antes.");
-      return;
-    }
-    const r = await S.restaurarConfirmada(localStorage, sha, true, remotoDe(cliente));
-    texto("st-restauro", r.ok ? "Restaurado depois da c\xF3pia de seguran\xE7a local." : "N\xE3o restaurou: " + (r.motivo || "falha"));
   });
 }
 iniciar();

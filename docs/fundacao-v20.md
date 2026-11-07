@@ -54,11 +54,11 @@ Fora dessa chave, de propósito: `folhazero_contador` (nome e setor do contador,
 
 ## O que esta etapa não faz
 
-Não liga login Google, e-mail e senha, backup automático de verdade, restauração entre aparelhos nem os módulos de gestão no dia a dia. O SQL canônico é `supabase/migrations/20261107210000_base_segura.sql`. `schema.sql` só aponta para ele. `migrations/002_proprietario.sql` não tem DDL. O arquivo foi conferido num Postgres 16 local, com os mesmos `gen_random_uuid` do PG 17, sem aplicar nada no projeto. Falta aceitar convite e criar organização pelo app: sem policy de insert, o padrão é negar.
+Não força login no aplicativo do dia a dia, não cria conta, não envia cópia e não liga backup automático, restauração entre aparelhos nem os módulos de gestão. A tela isolada só inicia o Google. O SQL canônico é `supabase/migrations/20261107210000_base_segura.sql`. `schema.sql` só aponta para ele. `migrations/002_proprietario.sql` não tem DDL. O arquivo foi conferido num Postgres 16 local, com os mesmos `gen_random_uuid` do PG 17, sem aplicar nada no projeto. Falta aceitar convite e criar organização pelo app: sem policy de insert, o padrão é negar.
 
 ## Testes executados
 
-`npm test`: 34 testes, todos passando. Um deles sobe um Postgres local, aplica a base duas vezes, a migração da cópia privada e os ataques. Outro confere o projeto real só com a chave publishable: saúde 200, Google desligado e tabela de snapshot ausente. Nenhum cadastro foi criado.
+`npm test`: 38 testes, todos passando. Um sobe um Postgres local, aplica a base duas vezes, a migração da cópia privada e os ataques. Outro confere o projeto real só com a chave publishable: saúde 200, Google ligado no painel e a tabela de cópia recusando a chave anônima. Os testes do botão usam mock e não criam conta.
 
 - Backup idempotente, quota, prévia, confirmação, cópia inválida e aborto da restauração.
 - Conta vazia, mescla sem duplicar id, troca de usuário, logout, ack parcial e ack divergente.
@@ -66,7 +66,7 @@ Não liga login Google, e-mail e senha, backup automático de verdade, restaura�
 - Recusa de `service_role`.
 - INOVA Blindagem ausente do catálogo real. Pausas iguais às do app. Gerente limitado a uma empresa. Consentimento com finalidade, versão, data e escopo. Revogação sem apagar o local e sem prometer apagar a produção já retida.
 - Um aparelho ativo só como regra de servidor. Ativar outro pede confirmação. A nota local não apaga `folhazero_v1`.
-- Login Google e e-mail não enviam nada. E-mail fica pendente de SMTP. Plano Pro e PITR são recusados. Free não promete backup gerenciado.
+- O clique do Google, em mock, monta a autorização do projeto e recusa a origem publicada e um destino externo. O erro de retorno não contém token. E-mail fica pendente de SMTP. Plano Pro e PITR são recusados.
 - Proprietário da plataforma: bootstrap só com ordem explícita de servidor, nunca por nome ou e-mail. Ele aprova, suspende e revoga acessos e registra degustação ou licença manual sem preço. Não lê carros nem valores. O gerente só gere membros da própria empresa se o proprietário permitir. Convite real não é enviado. A tela de acesso fica desligada sem projeto e não guarda senha.
 - Regressão do relatório v19: 7 empresas, 13 setores, fim de expediente fora do tempo útil, reabertura preservando OS, valor e pausas, PDF ainda mensal.
 - v20: novembro de 2026 tem 6 semanas, a segunda é 02/11 a 08/11, sem "Semana N de M", quinzenas 1ª e 2ª, situação filtrada, resumo mensal intacto.
@@ -78,13 +78,14 @@ Captura mobile em 390x844, com carros fictícios OS-TESTE, operador "Pessoa Exem
 
 No aparelho, sem projeto: a seção Acesso explica que o login está desligado, os campos ficam inativos e a senha não é gravada. O painel do proprietário não abre pelo nome de quem usa o app. Com uma sessão de teste marcada como confirmada pelo servidor, a lista local de solicitações e de licenças pode ser alterada só em `folhazero_admin_meta`. Isso não cria conta, não envia convite e não mostra carros nem valores.
 
-A tela `acesso-teste.html` fala com o projeto usando só a chave publishable. Google está desligado no projeto. Criar conta por e-mail está bloqueado nesta tela porque a confirmação usaria o envio padrão. Entrar com uma conta já existente é o único envio de senha, e ele não cria usuário. A cópia privada depende da migração `20261107223000_snapshot_privado.sql`, que ainda não está no projeto. Schemas expostos da API, em especial se `private` ficou de fora, não foram conferidos: o conector não mostrou essa configuração.
+A tela `acesso-teste.html` fala com o projeto usando só a chave publishable e o fluxo PKCE. O botão Google chama `signInWithOAuth` com retorno igual à própria página. A origem `networkinova-jpg.github.io` fica bloqueada. Isso não é um login ponta a ponta: o endereço final de hospedagem ainda não existe e precisa entrar na allowlist do Auth. Criar conta por e-mail continua bloqueado porque a confirmação usaria o envio padrão. A cópia privada não é lida nem enviada nesta tela, mesmo com a tabela já aplicada. Schemas expostos da API, em especial se `private` ficou de fora, não foram conferidos.
 
 ## Testes não executados
 
 - Relação dos schemas expostos na API. Não dá para ver pelo conector se `private` está oculto. Tratar como pendência.
-- Login Google, SMTP próprio, cadastro de cliente e subida de lançamento real. A tela de teste não dispara esses envios.
-- Envio real de e-mail, login Google contra um provedor, upload e restauração noutro aparelho.
+- Login Google ponta a ponta. Os testes usam mock: o clique monta a URL do projeto e o erro não mostra token. Nenhuma conta real foi criada.
+- SMTP próprio, cadastro de cliente e subida de lançamento real.
+- Envio real de e-mail, upload e restauração noutro aparelho. O envio de cópia permanece bloqueado nesta tela.
 - Revogação de aparelho com o servidor fora do ar. O teste cobre a decisão e o fato de o local permanecer. Não cobre um aparelho real offline.
 - Duas abas reais do navegador ao mesmo tempo. A mescla por id está testada em memória.
 - Publicação no GitHub Pages. O cache do service worker desta branch é `folha-zero-v20`. O site no ar continua a v19.
@@ -93,11 +94,11 @@ A tela `acesso-teste.html` fala com o projeto usando só a chave publishable. Go
 
 Sem colar segredo em conversa.
 
-1. Aplicar pelo conector só `supabase/migrations/20261107223000_snapshot_privado.sql`. Não reaplicar a base `20261107210528`.
+1. Não reaplicar a base `20261107210528` nem a cópia `20261107223000`. As duas já foram aplicadas.
 2. No painel do projeto, conferir se a API expõe só `public`. O schema `private` precisa ficar de fora. Isso ainda não foi verificado.
-3. Google: criar o cliente OAuth no Google Cloud, com a origem da tela de teste, e preencher no Auth do Supabase. O provedor está desligado hoje.
+3. Quando o endereço HTTPS da hospedagem isolada existir, colocá-lo em Authentication, URL Configuration, Redirect URLs. A origem JavaScript autorizada no Google Cloud é esse mesmo HTTPS. Não usar `networkinova-jpg.github.io`.
 4. E-mail de cliente: configurar SMTP próprio. O envio padrão não serve. Enquanto isso, a tela não cria conta.
-5. No computador de teste: `python3 -m http.server 8765` e abrir `http://127.0.0.1:8765/acesso-teste.html`. Não é o GitHub Pages.
+5. No computador, só para ver a tela: `python3 -m http.server 8765` e abrir `http://127.0.0.1:8765/acesso-teste.html`. Esse endereço não entra na allowlist e não é o teste do telefone.
 
 ## Rollout quando houver autorização
 
