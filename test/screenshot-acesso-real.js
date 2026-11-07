@@ -41,10 +41,25 @@ function servir() {
   if (!/alcançado/.test(conexao)) throw new Error('conexao: ' + conexao);
   if (!/Google ligado no projeto/.test(google)) throw new Error('google: ' + google);
   if (!/Criar conta está desligado/.test(email)) throw new Error('email: ' + email);
-  if (!/bloqueado neste teste de login/.test(snap)) throw new Error('snapshot: ' + snap);
+  if (!/nuvem continua desligada/.test(snap)) throw new Error('snapshot: ' + snap);
   if (!(await page.locator('#btn-google').isEnabled())) throw new Error('google desabilitado fora da origem publicada');
+  const posts = [];
+  page.on('request', (req) => {
+    if (req.method() === 'POST' && req.url().includes('/rest/v1/snapshots_privados')) posts.push(req.url());
+  });
+  await page.locator('#btn-gerar').click();
+  await page.locator('#btn-comparar').click();
+  const copia = await page.textContent('#st-copia');
+  const restauro = await page.textContent('#st-restauro');
+  if (!/fictício/.test(copia)) throw new Error('copia: ' + copia);
+  if (!/Integridade confere/.test(restauro)) throw new Error('restauro: ' + restauro);
+  const chaves = await page.evaluate(() => Object.keys(localStorage));
+  if (chaves.includes('folhazero_v1')) throw new Error('leu o aplicativo');
+  if (!chaves.includes('folhazero_teste_fixture')) throw new Error('fixture ausente');
+  if (await page.locator('#btn-enviar').isEnabled()) throw new Error('envio remoto habilitado');
+  if (await page.locator('#btn-confirmar').count()) throw new Error('a tela oferece restaurar o aplicativo');
   await page.locator('main').screenshot({ path: '/opt/cursor/artifacts/folha-zero-acesso-teste-mobile.png' });
-  if (await page.locator('#btn-enviar').isEnabled()) throw new Error('envio habilitado sem sessao e sem tabela');
+  if (posts.length) throw new Error('houve envio remoto');
   if (chamadas.length) throw new Error('houve signup: ' + chamadas.length);
   await browser.close();
   srv.close();

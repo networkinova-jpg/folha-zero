@@ -130,6 +130,172 @@ var require_login_google = __commonJS({
   }
 });
 
+// fixture-teste.js
+var require_fixture_teste = __commonJS({
+  "fixture-teste.js"(exports, module) {
+    (function(root) {
+      const CHAVE = "folhazero_teste_fixture";
+      const CHAVE_B = "folhazero_teste_fixture_b";
+      const PROIBIDA = "folhazero_v1";
+      const LIMITE_BYTES = 65536;
+      const MAX_COPIAS = 3;
+      function gerarConjunto() {
+        return {
+          version: 2,
+          marca: "fixture-teste",
+          entries: [
+            {
+              id: "fx-aco-01",
+              empresa: "INOVA Blindagem",
+              setor: "Tape\xE7aria",
+              os: "OS-FIXTURE-01",
+              veiculo: "Ve\xEDculo fict\xEDcio",
+              dataInicio: "2026-11-02",
+              horaInicio: "08:15",
+              dataTermino: "2026-11-02",
+              horaTermino: "17:00",
+              situacao: "Finalizado",
+              pausas: [
+                { motivo: "Fim de expediente", inicio: "2026-11-02T12:00", fim: "2026-11-02T13:00" },
+                { motivo: "A\xE7o da ma\xE7aneta", inicio: "2026-11-02T15:00", fim: "2026-11-02T15:20", outro: true }
+              ],
+              valor: 0,
+              ajudante: 0,
+              obs: "Pe\xE7a de teste com acento",
+              exemplo: true,
+              createdAt: 17620416e5,
+              updatedAt: 17620704e5
+            },
+            {
+              id: "fx-vidro-02",
+              empresa: "INOVA Blindagem",
+              setor: "Vidro",
+              os: "OS-FIXTURE-02",
+              veiculo: "Carro sem valor",
+              dataInicio: "2026-11-03",
+              horaInicio: "09:00",
+              dataTermino: null,
+              horaTermino: null,
+              situacao: "Em processo",
+              pausas: [],
+              valor: null,
+              ajudante: null,
+              obs: "",
+              exemplo: true,
+              createdAt: 1762128e6,
+              updatedAt: 1762128e6
+            }
+          ],
+          quinzenas: {},
+          descontos: {},
+          settings: {
+            operador: "Pessoa Exemplo",
+            setorOperador: "Tape\xE7aria",
+            lastBackup: null,
+            valorPadrao: { "INOVA Blindagem": 0 },
+            aliquota: {}
+          }
+        };
+      }
+      function canon(valor) {
+        if (Array.isArray(valor)) return "[" + valor.map(canon).join(",") + "]";
+        if (valor && typeof valor === "object") {
+          return "{" + Object.keys(valor).sort().map((k) => JSON.stringify(k) + ":" + canon(valor[k])).join(",") + "}";
+        }
+        return JSON.stringify(valor);
+      }
+      function validarDocumento(doc) {
+        if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { ok: false, motivo: "carga_invalida" };
+        const texto2 = canon(doc);
+        if (texto2.length > LIMITE_BYTES) return { ok: false, motivo: "carga_grande" };
+        if (doc.marca !== "fixture-teste" || doc.version !== 2) return { ok: false, motivo: "carga_invalida" };
+        if (!Array.isArray(doc.entries) || doc.entries.length < 1 || doc.entries.length > 8) return { ok: false, motivo: "carga_invalida" };
+        if (!doc.settings || doc.settings.operador !== "Pessoa Exemplo") return { ok: false, motivo: "carga_invalida" };
+        for (const entrada of doc.entries) {
+          if (!entrada || typeof entrada.id !== "string" || !entrada.id || entrada.id.length > 40) return { ok: false, motivo: "carga_invalida" };
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(entrada.dataInicio || "")) return { ok: false, motivo: "carga_invalida" };
+          if (!Array.isArray(entrada.pausas)) return { ok: false, motivo: "carga_invalida" };
+          if (Object.prototype.hasOwnProperty.call(entrada, "valor") && entrada.valor !== null && typeof entrada.valor !== "number") {
+            return { ok: false, motivo: "carga_invalida" };
+          }
+          if (typeof entrada.obs === "string" && entrada.obs.length > 200) return { ok: false, motivo: "carga_grande" };
+          for (const pausa of entrada.pausas) {
+            if (!pausa || typeof pausa.motivo !== "string" || !pausa.motivo) return { ok: false, motivo: "carga_invalida" };
+            if (!/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(pausa.inicio || "")) return { ok: false, motivo: "carga_invalida" };
+          }
+        }
+        return { ok: true };
+      }
+      function gravarFixture(storage, chave, documento) {
+        if (chave === PROIBIDA || chave !== CHAVE && chave !== CHAVE_B) {
+          return { ok: false, motivo: "chave_proibida", escreveu: false };
+        }
+        const v = validarDocumento(documento);
+        if (!v.ok) return { ok: false, motivo: v.motivo, escreveu: false };
+        storage.setItem(chave, canon(documento));
+        return { ok: true, escreveu: true, chave };
+      }
+      function gerarEGravar(storage) {
+        const documento = gerarConjunto();
+        const gravado = gravarFixture(storage, CHAVE, documento);
+        return Object.assign({ documento }, gravado);
+      }
+      function comparar(a, b) {
+        const ca = canon(a);
+        const cb = canon(b);
+        const ids = (a.entries || []).map((e) => e.id);
+        const pausas = (a.entries || []).reduce((n, e) => n + (e.pausas || []).length, 0);
+        const zero = (a.entries || []).some((e) => e.valor === 0);
+        const ausente = (a.entries || []).some((e) => e.valor === null);
+        const acentos = /[áàãâéêíóôõúç]/i.test(ca);
+        const ok = ca === cb && ids.length === 2 && pausas === 2 && zero && ausente && acentos;
+        return { ok, ids, pausas, valorZero: zero, valorAusente: ausente, acentos, motivo: ok ? "integro" : "divergente" };
+      }
+      function simularOutroNavegador(storageA, storageB) {
+        const bruto = storageA.getItem(CHAVE);
+        if (bruto == null) return { ok: false, motivo: "sem_fixture" };
+        let doc;
+        try {
+          doc = JSON.parse(bruto);
+        } catch (_) {
+          return { ok: false, motivo: "carga_invalida" };
+        }
+        const gravado = gravarFixture(storageB, CHAVE_B, doc);
+        if (!gravado.ok) return gravado;
+        return comparar(doc, JSON.parse(storageB.getItem(CHAVE_B)));
+      }
+      function tentarEnvioRemoto(sessao, agoraMs) {
+        const expira = sessao && sessao.expires_at;
+        const viva = !!(sessao && sessao.user && sessao.user.id && expira && expira * 1e3 > agoraMs);
+        if (!viva) return { ok: false, enviou: false, motivo: "sessao_ausente" };
+        return {
+          ok: false,
+          enviou: false,
+          motivo: "envio_bloqueado",
+          pendencias: ["migracao_20261107234500_nao_aplicada", "schema_private_conferido_sem_liberar_envio"]
+        };
+      }
+      const api = {
+        CHAVE,
+        CHAVE_B,
+        PROIBIDA,
+        LIMITE_BYTES,
+        MAX_COPIAS,
+        canon,
+        gerarConjunto,
+        validarDocumento,
+        gravarFixture,
+        gerarEGravar,
+        comparar,
+        simularOutroNavegador,
+        tentarEnvioRemoto
+      };
+      root.FolhaFixture = api;
+      if (typeof module !== "undefined" && module.exports) module.exports = api;
+    })(typeof globalThis !== "undefined" ? globalThis : exports);
+  }
+});
+
 // node_modules/@supabase/supabase-js/dist/tracingRegistry.mjs
 var EXTRACTOR_KEY = /* @__PURE__ */ Symbol.for("@supabase/supabase-js.traceContextExtractor");
 function getTraceContextExtractor() {
@@ -21046,8 +21212,10 @@ if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and b
 
 // acesso-teste.js
 var import_login_google = __toESM(require_login_google());
+var import_fixture_teste = __toESM(require_fixture_teste());
 import { FOLHA_ZERO_TESTE } from "./acesso-teste-config.js";
 var G = globalThis.FolhaLoginGoogle;
+var F = globalThis.FolhaFixture;
 var $ = (id) => document.getElementById(id);
 function chavePublicaAceita(chave) {
   if (!chave || typeof chave !== "string") return false;
@@ -21098,7 +21266,7 @@ function pintar(estado) {
   const bloqueada = G.origemProducao(window.location.origin);
   texto("st-google", bloqueada ? "Esta origem \xE9 a do aplicativo publicado. O login de teste n\xE3o abre aqui." : estado.google ? "Google ligado no projeto. O retorno \xE9 esta mesma p\xE1gina." : "Pendente: o provedor Google est\xE1 desligado no projeto.");
   texto("st-email", "Entrar com e-mail e senha s\xF3 funciona para uma conta que j\xE1 exista. Criar conta est\xE1 desligado: a confirma\xE7\xE3o sairia pelo envio padr\xE3o, que n\xE3o serve para clientes.");
-  texto("st-snapshot", "Envio de c\xF3pia bloqueado neste teste de login. Nenhum lan\xE7amento \xE9 lido nem enviado.");
+  texto("st-snapshot", "A nuvem continua desligada. A migra\xE7\xE3o de valida\xE7\xE3o ainda n\xE3o foi aplicada no projeto.");
   texto("st-sessao", estado.sessao ? "Sess\xE3o ativa neste navegador." : "Sem sess\xE3o de usu\xE1rio do Folha Zero.");
   const google = $("btn-google");
   if (google) google.disabled = bloqueada || !estado.google;
@@ -21153,5 +21321,29 @@ async function iniciar() {
     texto("st-login", "Sess\xE3o encerrada neste navegador. Os lan\xE7amentos locais n\xE3o foram apagados.");
     pintar(await sondar(cliente));
   });
+  $("btn-gerar").addEventListener("click", () => {
+    const r = F.gerarEGravar(localStorage);
+    texto("st-copia", r.ok ? "Conjunto fict\xEDcio gravado na chave de teste. Dois lan\xE7amentos, sem leitura do aplicativo." : "N\xE3o gravou: " + (r.motivo || "falha"));
+  });
+  $("btn-comparar").addEventListener("click", () => {
+    const outro = memoria();
+    const r = F.simularOutroNavegador(localStorage, outro);
+    texto("st-restauro", r.ok ? "Integridade confere no outro contexto de teste. Ids " + r.ids.join(", ") + ". A nuvem n\xE3o recebeu esta c\xF3pia." : "Sem confer\xEAncia: " + (r.motivo || "falha") + ".");
+  });
+  $("btn-enviar").addEventListener("click", () => {
+    const r = F.tentarEnvioRemoto(null, Date.now());
+    texto("st-copia", r.enviou ? "Envio inesperado." : "Envio remoto bloqueado. Nenhuma c\xF3pia saiu deste navegador.");
+  });
+}
+function memoria() {
+  const dados = /* @__PURE__ */ new Map();
+  return {
+    getItem(chave) {
+      return dados.has(chave) ? dados.get(chave) : null;
+    },
+    setItem(chave, valor) {
+      dados.set(chave, String(valor));
+    }
+  };
 }
 iniciar();

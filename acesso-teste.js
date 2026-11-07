@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { FOLHA_ZERO_TESTE } from './acesso-teste-config.js';
 import './login-google.js';
+import './fixture-teste.js';
 
 const G = globalThis.FolhaLoginGoogle;
+const F = globalThis.FolhaFixture;
 const $ = (id) => document.getElementById(id);
 
 function chavePublicaAceita(chave) {
@@ -59,7 +61,7 @@ function pintar(estado) {
       ? 'Google ligado no projeto. O retorno é esta mesma página.'
       : 'Pendente: o provedor Google está desligado no projeto.');
   texto('st-email', 'Entrar com e-mail e senha só funciona para uma conta que já exista. Criar conta está desligado: a confirmação sairia pelo envio padrão, que não serve para clientes.');
-  texto('st-snapshot', 'Envio de cópia bloqueado neste teste de login. Nenhum lançamento é lido nem enviado.');
+  texto('st-snapshot', 'A nuvem continua desligada. A migração de validação ainda não foi aplicada no projeto.');
   texto('st-sessao', estado.sessao ? 'Sessão ativa neste navegador.' : 'Sem sessão de usuário do Folha Zero.');
   const google = $('btn-google');
   if (google) google.disabled = bloqueada || !estado.google;
@@ -113,6 +115,31 @@ async function iniciar() {
     texto('st-login', 'Sessão encerrada neste navegador. Os lançamentos locais não foram apagados.');
     pintar(await sondar(cliente));
   });
+  $('btn-gerar').addEventListener('click', () => {
+    const r = F.gerarEGravar(localStorage);
+    texto('st-copia', r.ok
+      ? 'Conjunto fictício gravado na chave de teste. Dois lançamentos, sem leitura do aplicativo.'
+      : 'Não gravou: ' + (r.motivo || 'falha'));
+  });
+  $('btn-comparar').addEventListener('click', () => {
+    const outro = memoria();
+    const r = F.simularOutroNavegador(localStorage, outro);
+    texto('st-restauro', r.ok
+      ? 'Integridade confere no outro contexto de teste. Ids ' + r.ids.join(', ') + '. A nuvem não recebeu esta cópia.'
+      : 'Sem conferência: ' + (r.motivo || 'falha') + '.');
+  });
+  $('btn-enviar').addEventListener('click', () => {
+    const r = F.tentarEnvioRemoto(null, Date.now());
+    texto('st-copia', r.enviou ? 'Envio inesperado.' : 'Envio remoto bloqueado. Nenhuma cópia saiu deste navegador.');
+  });
+}
+
+function memoria() {
+  const dados = new Map();
+  return {
+    getItem(chave) { return dados.has(chave) ? dados.get(chave) : null; },
+    setItem(chave, valor) { dados.set(chave, String(valor)); }
+  };
 }
 
 iniciar();

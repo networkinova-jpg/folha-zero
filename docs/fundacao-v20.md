@@ -58,7 +58,7 @@ Não força login no aplicativo do dia a dia, não cria conta, não envia cópia
 
 ## Testes executados
 
-`npm test`: 38 testes, todos passando. Um sobe um Postgres local, aplica a base duas vezes, a migração da cópia privada e os ataques. Outro confere o projeto real só com a chave publishable: saúde 200, Google ligado no painel e a tabela de cópia recusando a chave anônima. Os testes do botão usam mock e não criam conta.
+`npm test`: 44 testes, todos passando. Um sobe um Postgres local, aplica a base duas vezes, a cópia privada, a validação fictícia duas vezes e os ataques. Outro confere o projeto real só com a chave publishable. Os testes do botão e da cópia usam mock ou banco local. Nenhuma conta foi criada.
 
 - Backup idempotente, quota, prévia, confirmação, cópia inválida e aborto da restauração.
 - Conta vazia, mescla sem duplicar id, troca de usuário, logout, ack parcial e ack divergente.
@@ -78,7 +78,11 @@ Captura mobile em 390x844, com carros fictícios OS-TESTE, operador "Pessoa Exem
 
 No aparelho, sem projeto: a seção Acesso explica que o login está desligado, os campos ficam inativos e a senha não é gravada. O painel do proprietário não abre pelo nome de quem usa o app. Com uma sessão de teste marcada como confirmada pelo servidor, a lista local de solicitações e de licenças pode ser alterada só em `folhazero_admin_meta`. Isso não cria conta, não envia convite e não mostra carros nem valores.
 
-A tela `acesso-teste.html` fala com o projeto usando só a chave publishable e o fluxo PKCE. O botão Google chama `signInWithOAuth` com retorno igual à própria página. A origem `networkinova-jpg.github.io` fica bloqueada. Isso não é um login ponta a ponta: o endereço final de hospedagem ainda não existe e precisa entrar na allowlist do Auth. Criar conta por e-mail continua bloqueado porque a confirmação usaria o envio padrão. A cópia privada não é lida nem enviada nesta tela, mesmo com a tabela já aplicada. Schemas expostos da API, em especial se `private` ficou de fora, não foram conferidos.
+A tela `acesso-teste.html` fala com o projeto usando só a chave publishable e o fluxo PKCE. O botão Google chama `signInWithOAuth` com retorno igual à própria página. A origem `networkinova-jpg.github.io` fica bloqueada. O login Google já foi concluído por Ricardo no site isolado. Esta etapa não repete esse login.
+
+A cópia fictícia fica na chave `folhazero_teste_fixture`. A tela não lê `folhazero_v1` e não restaura o aplicativo. O envio à nuvem permanece desligado. A migração `20261107234500_snapshot_fixture.sql` só foi aplicada no Postgres local. Ela recusa carga sem a marca de teste, carga acima de 64 KiB e mais de 3 cópias por sessão. Esse teto é de teste. Não é a retenção do aplicativo, que continua pendente. No plano Free o banco fica somente leitura acima de 500 MB e não há PITR.
+
+Em 07/11/2026 a Data API, com a chave publishable, respondeu HTTP 406 e código PGRST106 ao schema `private`. A função de mesmo nome em `public` respondeu 404 PGRST202. O schema `private` está fora da API nesta verificação. O envio remoto continua fechado porque a migração de validação não foi aplicada no projeto.
 
 ## Testes não executados
 

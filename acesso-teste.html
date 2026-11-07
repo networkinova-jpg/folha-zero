@@ -16,7 +16,6 @@
     <p class="acesso-aviso">Esta página é separada do aplicativo. Quem já usa o Folha Zero não passa por aqui. Nenhum lançamento é lido nem enviado ao abrir.</p>
     <p id="st-conexao" class="hint">Conferindo o projeto…</p>
     <p id="st-sessao" class="hint"></p>
-    <p id="st-snapshot" class="hint"></p>
   </div>
   <div class="card">
     <h2>Entrar</h2>
@@ -32,14 +31,13 @@
     <button type="button" class="btn ghost" id="btn-sair">Sair desta sessão</button>
   </div>
   <div class="card">
-    <h2>Cópia individual</h2>
-    <p class="hint">Envio de cópia bloqueado neste teste de login. Nenhum lançamento é lido, importado ou enviado.</p>
-    <label><input id="autorizo" type="checkbox"> Autorizo enviar o documento deste navegador para a minha conta</label>
-    <button type="button" class="btn primary" id="btn-enviar" disabled>Enviar cópia</button>
+    <h2>Cópia fictícia</h2>
+    <p class="acesso-aviso">Modo teste. Estes lançamentos são fictícios e ficam numa chave separada. O proprietário não lê estes dados. Nada aqui restaura o aplicativo.</p>
+    <p id="st-snapshot" class="hint">A nuvem continua desligada.</p>
+    <button type="button" class="btn primary" id="btn-gerar">Gerar conjunto fictício</button>
+    <button type="button" class="btn ghost" id="btn-comparar">Comparar com outro contexto de teste</button>
     <p id="st-copia" class="hint"></p>
-    <button type="button" class="btn ghost" id="btn-listar">Listar cópias da sessão</button>
-    <ul id="lista-copias"></ul>
-    <button type="button" class="btn ghost" id="btn-confirmar">Confirmar restauração da prévia</button>
+    <button type="button" class="btn primary" id="btn-enviar" disabled>Enviar cópia para a nuvem</button>
     <p id="st-restauro" class="hint"></p>
   </div>
   <p class="hint">Esta página não abre o aplicativo do dia a dia.</p>
