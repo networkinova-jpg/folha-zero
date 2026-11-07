@@ -29,8 +29,9 @@ test('bootstrap não usa nome nem e-mail e o cliente não recebe a função', ()
   const ok = Acesso.bootstrapProprietario(meta, { via: 'sql_do_titular', explicito: true, uid: 'uid-prop-teste' });
   assert.equal(ok.ok, true);
   assert.equal(Acesso.bootstrapProprietario(meta, { via: 'sql_do_titular', explicito: true, uid: 'uid-2' }).motivo, 'ja_existe_proprietario');
-  const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '002_proprietario.sql'), 'utf8');
-  assert.match(sql, /revoke all on function folha_bootstrap_proprietario/);
+  const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20261107210000_base_segura.sql'), 'utf8');
+  assert.equal(sql.includes('function public.folha_bootstrap_proprietario'), false);
+  assert.match(sql, /revoke all on all tables in schema public from public, anon, authenticated/);
   assert.equal(sql.includes('service_role'), false);
   assert.equal(fs.readFileSync(path.join(__dirname, '..', 'acesso.js'), 'utf8').includes('fetch('), false);
 });

@@ -1,18 +1,18 @@
 # Fundação da v20 (sem publicação)
 
-Esta etapa fica só no branch de desenvolvimento. Não houve merge, push em `main`, deploy do GitHub Pages, projeto Supabase nem planilha real.
+Esta etapa fica só no branch de desenvolvimento. Não houve merge, push em `main` nem deploy do GitHub Pages. O projeto Supabase `vyxfjdhhlzluwfesxgra` existe, em São Paulo, no plano Free, e o banco continua vazio: o schema não foi aplicado.
 
 ## Revisão de 07/11
 
-Ricardo fechou o escopo abaixo. Ainda não há empresa piloto, gerente piloto nem projeto configurado.
+Ricardo fechou o escopo abaixo. O projeto Free existe e está vazio. Ainda não há empresa piloto nem gerente piloto, e o schema corrigido ainda não foi aplicado nele.
 
 - Gestão de Produção é um módulo só, com equipe e gerente. O gerente coordena por setor, por prestador ou cria equipe. O nome genérico da equipe é Equipe de Produção. Concept não é nome fixo de equipe.
 - INOVA Blindagem aparece só como tenant fictício de teste nesta rodada. Não entrou na lista real de empresas do app e não é semeada em `folhazero_v1`.
 - Pausas usam a lista que o app já tem, mais Outro motivo e Fim de expediente. Não há taxonomia nova de insumo ou pessoal.
 - Cada conta de gerente pertence a uma única organização. Outra empresa exige outra conta. Não há seletor de várias empresas para o gerente. O prestador pode atender várias empresas clientes, mas o gerente vê só a própria organização e só a produção que o prestador compartilhou. Valor privado não entra.
-- Compartilhar exige consentimento informado: finalidade, versão do texto, data e escopo. Revogar interrompe compartilhamento novo. Produção já entregue pode ficar retida para a finalidade registrada. Isso não promete apagar tudo e não apaga o aparelho.
+- Compartilhar exige consentimento informado: finalidade, versão do texto, data e escopo. Revogar encerra a visibilidade da empresa. A retenção de produção já entregue não está ativa: ninguém concordou com ela ainda. A linha continua com o prestador. Isso não promete exclusão irrestrita e não apaga o aparelho.
 - Um aparelho ativo por conta vale no servidor, depois de confirmação ao ativar outro. `localStorage` e impressão digital não travam o celular. Quem está offline só perde a nuvem quando o aparelho voltar a falar com o servidor, e os lançamentos locais continuam. Trocar de conta não mostra a base da outra. Quem já usa o app segue abrindo o legado.
-- Supabase, se for criado com autorização, é só o plano Free, titular Ricardo, região `sa-east-1`. Sem Pro, PITR, cartão, addon ou upgrade. Custo futuro, se houver, fica com o contratante por mensalidade ou licença. O preço não está definido. O Free não é produção sem limite nem backup gerenciado.
+- O projeto já é Supabase Free, titular Ricardo, região `sa-east-1`, id `vyxfjdhhlzluwfesxgra`. Continua vazio. Sem Pro, PITR, cartão, addon ou upgrade. Custo futuro, se houver, fica com o contratante por mensalidade ou licença. O preço não está definido. O Free não é produção sem limite nem backup gerenciado.
 - Login Google e e-mail com senha são desejados. E-mail depende de SMTP e dos limites do fornecedor. O SMTP padrão restrito não será usado em produção e nenhum provedor foi contratado. O código só decide o motivo da pendência e não envia credencial nem mensagem.
 - Dados fictícios ficam nos testes. Atualizar o app não injeta esses dados na base de ninguém. Não há modo demo automático.
 
@@ -54,11 +54,11 @@ Fora dessa chave, de propósito: `folhazero_contador` (nome e setor do contador,
 
 ## O que esta etapa não faz
 
-Não liga login Google, e-mail e senha, backup automático de verdade, restauração entre aparelhos nem os módulos de gestão no dia a dia. O SQL em `supabase/schema.sql` é proposta. `fixtures.sql` não insere dados e não usa lançamento real. O modelo em `supabase/politica-modelo.js` só confere as regras nos testes. Não substitui o Postgres.
+Não liga login Google, e-mail e senha, backup automático de verdade, restauração entre aparelhos nem os módulos de gestão no dia a dia. O SQL canônico é `supabase/migrations/20261107210000_base_segura.sql`. `schema.sql` só aponta para ele. `migrations/002_proprietario.sql` não tem DDL. O arquivo foi conferido num Postgres 16 local, com os mesmos `gen_random_uuid` do PG 17, sem aplicar nada no projeto. Falta aceitar convite e criar organização pelo app: sem policy de insert, o padrão é negar.
 
 ## Testes executados
 
-`npm test`: 28 testes, todos passando.
+`npm test`: 29 testes, todos passando. O último sobe um Postgres local, aplica a migração duas vezes e roda ataques de isolamento.
 
 - Backup idempotente, quota, prévia, confirmação, cópia inválida e aborto da restauração.
 - Conta vazia, mescla sem duplicar id, troca de usuário, logout, ack parcial e ack divergente.
@@ -78,11 +78,11 @@ Captura mobile em 390x844, com carros fictícios OS-TESTE, operador "Pessoa Exem
 
 No aparelho, sem projeto: a seção Acesso explica que o login está desligado, os campos ficam inativos e a senha não é gravada. O painel do proprietário não abre pelo nome de quem usa o app. Com uma sessão de teste marcada como confirmada pelo servidor, a lista local de solicitações e de licenças pode ser alterada só em `folhazero_admin_meta`. Isso não cria conta, não envia convite e não mostra carros nem valores.
 
-Pendente de integração real: criar o projeto Free, ligar a chave pública, provar o login Google, validar o SMTP próprio, publicar a função de borda e aplicar as migrações. O conector do Supabase segue sem autenticação. Nada disso foi simulado como se já estivesse no ar.
+Pendente de integração real: o Ricardo validar e aplicar a migração no projeto vazio pelo conector. Também faltam ligar a chave pública, provar o login Google, validar o SMTP próprio e publicar a função de borda. Nada disso foi feito neste passo. O banco remoto continua vazio.
 
 ## Testes não executados
 
-- RLS de verdade num Postgres ou Supabase. Não há projeto e esta etapa não criou um.
+- RLS no projeto Supabase. O teste real foi num Postgres local descartável. O projeto `vyxfjdhhlzluwfesxgra` não recebeu este SQL.
 - Envio real de e-mail, login Google contra um provedor, upload e restauração noutro aparelho.
 - Revogação de aparelho com o servidor fora do ar. O teste cobre a decisão e o fato de o local permanecer. Não cobre um aparelho real offline.
 - Duas abas reais do navegador ao mesmo tempo. A mescla por id está testada em memória.

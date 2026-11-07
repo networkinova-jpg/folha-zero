@@ -10,7 +10,7 @@ const estado = {
     { orgId: 'beta', userId: 'diego', papel: 'gerente', setor: '', status: 'ativo' },
     { orgId: 'alfa', userId: 'eva', papel: 'equipe', setor: 'Setor Exemplo B', status: 'revogado' }
   ],
-  atribuicoes: [{ lancamentoId: 'carro-3', userId: 'bruno' }],
+  atribuicoes: [{ lancamentoId: 'carro-3', userId: 'bruno', etapa: 'Montagem' }],
   compartilhamentos: [
     { lancamentoId: 'carro-2', orgId: 'alfa', encerradoEm: null, retido: true },
     { lancamentoId: 'carro-3', orgId: 'alfa', encerradoEm: null, retido: true }

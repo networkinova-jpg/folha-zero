@@ -11,14 +11,20 @@ function podeLerValor(estado, ator, valor) {
   return valor.ownerId === ator.uid;
 }
 
+function setorCompativel(a, b) {
+  const x = String(a || '').trim();
+  const y = String(b || '').trim();
+  return x !== '' && x === y;
+}
+
 function compartilhamentoVisivel(estado, lancamentoId) {
-  return (estado.compartilhamentos || []).find(c => c.lancamentoId === lancamentoId && (c.encerradoEm == null || c.retido)) || null;
+  return (estado.compartilhamentos || []).find(c => c.lancamentoId === lancamentoId && c.encerradoEm == null) || null;
 }
 
 function equipeAlcanc(estado, eu, linha) {
-  if (eu.setor && eu.setor === linha.setor) return true;
-  if ((estado.atribuicoes || []).some(a => a.lancamentoId === linha.id && a.userId === eu.userId)) return true;
-  return (estado.equipeMembros || []).some(m => m.userId === eu.userId && ((m.setor && m.setor === linha.setor) || (m.prestadorId && m.prestadorId === linha.ownerId)));
+  if (setorCompativel(eu.setor, linha.setor)) return true;
+  if ((estado.atribuicoes || []).some(a => a.lancamentoId === linha.id && a.userId === eu.userId && String(a.etapa || '').trim() !== '')) return true;
+  return (estado.equipeMembros || []).some(m => m.userId === eu.userId && (setorCompativel(m.setor, linha.setor) || (m.prestadorId && m.prestadorId === linha.ownerId)));
 }
 
 function ehProprietario(estado, uid) {
@@ -84,9 +90,9 @@ function podeCompartilhar(estado, pedido) {
 function revogarConsentimento(consentimento, compartilhamentos) {
   const registro = Object.assign({}, consentimento, { revogadoEm: consentimento.revogadoEm || '2026-11-07T18:00:00.000Z' });
   const lista = (compartilhamentos || []).map(c => c.consentimentoId === registro.id
-    ? Object.assign({}, c, { encerradoEm: registro.revogadoEm, retido: true })
+    ? Object.assign({}, c, { encerradoEm: registro.revogadoEm, retido: false })
     : c);
-  return { consentimento: registro, compartilhamentos: lista, apagouProducaoRetida: false, apagouLocal: false, promessaApagarTudo: false };
+  return { consentimento: registro, compartilhamentos: lista, apagouProducaoRetida: false, apagouLocal: false, promessaApagarTudo: false, retencaoAtiva: false };
 }
 
 function ativarAparelho(aparelhos, uid, aparelhoId, confirmar) {

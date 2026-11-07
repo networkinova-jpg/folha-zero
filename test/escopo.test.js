@@ -91,9 +91,10 @@ test('gerente tem uma empresa, prestador atende várias, valor não sai', () => 
   const revogacao = Pol.revogarConsentimento(consent.registro, [share]);
   assert.equal(revogacao.apagouLocal, false);
   assert.equal(revogacao.promessaApagarTudo, false);
-  assert.equal(revogacao.compartilhamentos[0].retido, true);
+  assert.equal(revogacao.retencaoAtiva, false);
+  assert.equal(revogacao.compartilhamentos[0].retido, false);
   const depois = { membros: visivel.membros, compartilhamentos: revogacao.compartilhamentos, consentimentos: [revogacao.consentimento] };
-  assert.equal(Pol.podeLerLancamento(depois, { uid: 'carla' }, linha), true);
+  assert.equal(Pol.podeLerLancamento(depois, { uid: 'carla' }, linha), false);
   assert.equal(Pol.podeCompartilhar(depois, { ownerId: 'ana', orgId: TENANT_FICTICIO.id, empresa: 'Cliente Norte Teste', setor: 'Setor Exemplo A' }).motivo, 'sem_consentimento');
   const outroTenant = { id: 'c1', ownerId: 'ana', setor: 'Setor Exemplo A' };
   const beta = { membros: [{ orgId: 'beta', userId: 'diego', papel: 'gerente', status: 'ativo' }], compartilhamentos: revogacao.compartilhamentos };

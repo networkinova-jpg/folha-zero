@@ -20,8 +20,9 @@
 
 -- Consentimento da Ana, versão de texto 2026-11-07, finalidade de compartilhar
 -- produção sem valores, escopo só Cliente Norte Teste e Setor Exemplo A.
--- Depois de revogar, o carro já entregue pode permanecer retido na organização.
--- Isso não apaga o folhazero_v1 e não promete apagar toda a produção retida.
+-- Depois de revogar, o gerente deixa de ver o carro. A linha continua com a Ana.
+-- Retenção pela empresa não está ativa. Não se presume concordância com isso.
+-- Isso não apaga o folhazero_v1 e não promete exclusão irrestrita.
 
 -- Pausa do carro fictício: motivo "Faltando peça", mais uma "Fim de expediente"
 -- e um "Outro motivo" com o texto "Peça de teste". Sem categoria nova.
