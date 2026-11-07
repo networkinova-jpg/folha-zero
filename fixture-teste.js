@@ -1,12 +1,14 @@
 /* Conjunto fictício da tela de teste.
    Grava só em chaves próprias. Não lê nem escreve o aplicativo.
-   O envio à nuvem fica desligado até a migração de validação ser aplicada no projeto. */
+   A superfície remota prevista é copias_fixture_teste, separada das cópias reais.
+   O envio continua bloqueado até o parent aprovar o SQL corrigido. */
 (function (root) {
   const CHAVE = 'folhazero_teste_fixture';
   const CHAVE_B = 'folhazero_teste_fixture_b';
   const PROIBIDA = 'folhazero_v1';
   const LIMITE_BYTES = 65536;
-  const MAX_COPIAS = 3;
+  const SUPERFICIE = 'copias_fixture_teste';
+  const MAX_COPIAS = 1;
 
   function gerarConjunto() {
     return {
@@ -79,22 +81,7 @@
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return { ok: false, motivo: 'carga_invalida' };
     const texto = canon(doc);
     if (texto.length > LIMITE_BYTES) return { ok: false, motivo: 'carga_grande' };
-    if (doc.marca !== 'fixture-teste' || doc.version !== 2) return { ok: false, motivo: 'carga_invalida' };
-    if (!Array.isArray(doc.entries) || doc.entries.length < 1 || doc.entries.length > 8) return { ok: false, motivo: 'carga_invalida' };
-    if (!doc.settings || doc.settings.operador !== 'Pessoa Exemplo') return { ok: false, motivo: 'carga_invalida' };
-    for (const entrada of doc.entries) {
-      if (!entrada || typeof entrada.id !== 'string' || !entrada.id || entrada.id.length > 40) return { ok: false, motivo: 'carga_invalida' };
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(entrada.dataInicio || '')) return { ok: false, motivo: 'carga_invalida' };
-      if (!Array.isArray(entrada.pausas)) return { ok: false, motivo: 'carga_invalida' };
-      if (Object.prototype.hasOwnProperty.call(entrada, 'valor') && entrada.valor !== null && typeof entrada.valor !== 'number') {
-        return { ok: false, motivo: 'carga_invalida' };
-      }
-      if (typeof entrada.obs === 'string' && entrada.obs.length > 200) return { ok: false, motivo: 'carga_grande' };
-      for (const pausa of entrada.pausas) {
-        if (!pausa || typeof pausa.motivo !== 'string' || !pausa.motivo) return { ok: false, motivo: 'carga_invalida' };
-        if (!/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(pausa.inicio || '')) return { ok: false, motivo: 'carga_invalida' };
-      }
-    }
+    if (texto !== canon(gerarConjunto())) return { ok: false, motivo: 'carga_invalida' };
     return { ok: true };
   }
 
@@ -145,7 +132,7 @@
       ok: false,
       enviou: false,
       motivo: 'envio_bloqueado',
-      pendencias: ['migracao_20261107234500_nao_aplicada', 'schema_private_conferido_sem_liberar_envio']
+      pendencias: ['sql_corrigido_sem_aprovacao', 'superficie_copias_fixture_teste']
     };
   }
 
@@ -154,6 +141,7 @@
     CHAVE_B,
     PROIBIDA,
     LIMITE_BYTES,
+    SUPERFICIE,
     MAX_COPIAS,
     canon,
     gerarConjunto,

@@ -138,7 +138,8 @@ var require_fixture_teste = __commonJS({
       const CHAVE_B = "folhazero_teste_fixture_b";
       const PROIBIDA = "folhazero_v1";
       const LIMITE_BYTES = 65536;
-      const MAX_COPIAS = 3;
+      const SUPERFICIE = "copias_fixture_teste";
+      const MAX_COPIAS = 1;
       function gerarConjunto() {
         return {
           version: 2,
@@ -208,22 +209,7 @@ var require_fixture_teste = __commonJS({
         if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { ok: false, motivo: "carga_invalida" };
         const texto2 = canon(doc);
         if (texto2.length > LIMITE_BYTES) return { ok: false, motivo: "carga_grande" };
-        if (doc.marca !== "fixture-teste" || doc.version !== 2) return { ok: false, motivo: "carga_invalida" };
-        if (!Array.isArray(doc.entries) || doc.entries.length < 1 || doc.entries.length > 8) return { ok: false, motivo: "carga_invalida" };
-        if (!doc.settings || doc.settings.operador !== "Pessoa Exemplo") return { ok: false, motivo: "carga_invalida" };
-        for (const entrada of doc.entries) {
-          if (!entrada || typeof entrada.id !== "string" || !entrada.id || entrada.id.length > 40) return { ok: false, motivo: "carga_invalida" };
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(entrada.dataInicio || "")) return { ok: false, motivo: "carga_invalida" };
-          if (!Array.isArray(entrada.pausas)) return { ok: false, motivo: "carga_invalida" };
-          if (Object.prototype.hasOwnProperty.call(entrada, "valor") && entrada.valor !== null && typeof entrada.valor !== "number") {
-            return { ok: false, motivo: "carga_invalida" };
-          }
-          if (typeof entrada.obs === "string" && entrada.obs.length > 200) return { ok: false, motivo: "carga_grande" };
-          for (const pausa of entrada.pausas) {
-            if (!pausa || typeof pausa.motivo !== "string" || !pausa.motivo) return { ok: false, motivo: "carga_invalida" };
-            if (!/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/.test(pausa.inicio || "")) return { ok: false, motivo: "carga_invalida" };
-          }
-        }
+        if (texto2 !== canon(gerarConjunto())) return { ok: false, motivo: "carga_invalida" };
         return { ok: true };
       }
       function gravarFixture(storage, chave, documento) {
@@ -272,7 +258,7 @@ var require_fixture_teste = __commonJS({
           ok: false,
           enviou: false,
           motivo: "envio_bloqueado",
-          pendencias: ["migracao_20261107234500_nao_aplicada", "schema_private_conferido_sem_liberar_envio"]
+          pendencias: ["sql_corrigido_sem_aprovacao", "superficie_copias_fixture_teste"]
         };
       }
       const api = {
@@ -280,6 +266,7 @@ var require_fixture_teste = __commonJS({
         CHAVE_B,
         PROIBIDA,
         LIMITE_BYTES,
+        SUPERFICIE,
         MAX_COPIAS,
         canon,
         gerarConjunto,
@@ -21266,7 +21253,7 @@ function pintar(estado) {
   const bloqueada = G.origemProducao(window.location.origin);
   texto("st-google", bloqueada ? "Esta origem \xE9 a do aplicativo publicado. O login de teste n\xE3o abre aqui." : estado.google ? "Google ligado no projeto. O retorno \xE9 esta mesma p\xE1gina." : "Pendente: o provedor Google est\xE1 desligado no projeto.");
   texto("st-email", "Entrar com e-mail e senha s\xF3 funciona para uma conta que j\xE1 exista. Criar conta est\xE1 desligado: a confirma\xE7\xE3o sairia pelo envio padr\xE3o, que n\xE3o serve para clientes.");
-  texto("st-snapshot", "A nuvem continua desligada. A migra\xE7\xE3o de valida\xE7\xE3o ainda n\xE3o foi aplicada no projeto.");
+  texto("st-snapshot", "A nuvem continua desligada. O envio remoto segue bloqueado at\xE9 a aprova\xE7\xE3o da prote\xE7\xE3o corrigida.");
   texto("st-sessao", estado.sessao ? "Sess\xE3o ativa neste navegador." : "Sem sess\xE3o de usu\xE1rio do Folha Zero.");
   const google = $("btn-google");
   if (google) google.disabled = bloqueada || !estado.google;

@@ -88,6 +88,21 @@ test('carga inválida e carga grande são recusadas antes de gravar', () => {
   assert.equal(storage.getItem(fx.CHAVE), null);
 });
 
+test('o SQL corrigido fecha a fixture e não toca a tabela real', () => {
+  const crypto = require('crypto');
+  const sql = fs.readFileSync(path.join(__dirname, '..', 'supabase/migrations/20261107234500_snapshot_fixture.sql'), 'utf8');
+  const doc = JSON.parse(sql.match(/\$fx\$([\s\S]*?)\$fx\$/)[1]);
+  const sha = crypto.createHash('sha256').update(fx.canon(fx.gerarConjunto()), 'utf8').digest('hex');
+  assert.equal(fx.canon(doc), fx.canon(fx.gerarConjunto()));
+  assert.equal(sql.includes(sha), true);
+  assert.equal(sql.includes('create trigger snapshots_validar_fixture'), false);
+  assert.equal(sql.includes('before insert or update on public.snapshots_privados'), false);
+  assert.equal(sql.includes('before insert or update on public.copias_fixture_teste'), true);
+  assert.equal(sql.includes('count(*)'), false);
+  assert.equal(fx.SUPERFICIE, 'copias_fixture_teste');
+  assert.equal(fs.readFileSync(path.join(__dirname, '..', 'acesso-teste.js'), 'utf8').includes("from('snapshots_privados')"), false);
+});
+
 test('a tela declara modo teste e não oferece restaurar o aplicativo', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'acesso-teste.html'), 'utf8');
   const js = fs.readFileSync(path.join(__dirname, '..', 'acesso-teste.js'), 'utf8');

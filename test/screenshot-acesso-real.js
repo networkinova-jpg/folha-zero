@@ -45,7 +45,7 @@ function servir() {
   if (!(await page.locator('#btn-google').isEnabled())) throw new Error('google desabilitado fora da origem publicada');
   const posts = [];
   page.on('request', (req) => {
-    if (req.method() === 'POST' && req.url().includes('/rest/v1/snapshots_privados')) posts.push(req.url());
+    if (req.method() === 'POST' && (req.url().includes('/rest/v1/snapshots_privados') || req.url().includes('/rest/v1/copias_fixture_teste'))) posts.push(req.url());
   });
   await page.locator('#btn-gerar').click();
   await page.locator('#btn-comparar').click();

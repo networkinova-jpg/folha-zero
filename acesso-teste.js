@@ -61,7 +61,7 @@ function pintar(estado) {
       ? 'Google ligado no projeto. O retorno é esta mesma página.'
       : 'Pendente: o provedor Google está desligado no projeto.');
   texto('st-email', 'Entrar com e-mail e senha só funciona para uma conta que já exista. Criar conta está desligado: a confirmação sairia pelo envio padrão, que não serve para clientes.');
-  texto('st-snapshot', 'A nuvem continua desligada. A migração de validação ainda não foi aplicada no projeto.');
+  texto('st-snapshot', 'A nuvem continua desligada. O envio remoto segue bloqueado até a aprovação da proteção corrigida.');
   texto('st-sessao', estado.sessao ? 'Sessão ativa neste navegador.' : 'Sem sessão de usuário do Folha Zero.');
   const google = $('btn-google');
   if (google) google.disabled = bloqueada || !estado.google;
