@@ -1,12 +1,17 @@
--- Folha Zero: esquema proposto. Não foi aplicado em nenhum projeto.
--- Sem service_role, sem senha, sem URL. O cliente só poderá usar a anon key
--- de um projeto autorizado, e as regras abaixo é que limitam o acesso.
--- Dados de exemplo ficam em fixtures.sql e são fictícios.
+-- Folha Zero: esquema proposto. Não foi aplicado. Não existe projeto Supabase.
+-- Quando Ricardo autorizar a criação: somente plano Free, titular Ricardo, região sa-east-1.
+-- Fora desta proposta: Pro, PITR, cartão, addon e upgrade.
+-- O Free não é produção sem limite nem backup gerenciado.
+-- Sem service_role, sem senha, sem URL, sem SMTP e sem credencial.
+-- Dados de exemplo ficam em fixtures.sql e são fictícios. Não entram no app pessoal.
 
 create extension if not exists pgcrypto;
 
--- Papéis: prestador (módulo individual), equipe e gerente (mesmo módulo de gestão).
--- Equipe e gerente não leem valores. Ninguém se promove.
+-- Módulo individual: prestador, pode atender várias empresas clientes.
+-- Módulo único Gestão de Produção: equipe e gerente.
+-- Cada conta gerente pertence a uma só organização. Outra empresa exige outra conta.
+-- Não há seletor de várias empresas para o gerente.
+-- Equipe de Produção é nome genérico. Não fixar Concept nem outra marca.
 
 create table if not exists perfis (
   id uuid primary key references auth.users (id) on delete cascade,
@@ -77,15 +82,37 @@ create table if not exists ajustes_privados (
   aliquota jsonb not null default '{}'::jsonb
 );
 
+-- Motivos iguais aos do app: lista oficial, Outro motivo (texto livre) e Fim de expediente.
+-- Não há taxonomia substituta (insumo, pessoal etc.).
 create table if not exists pausas (
   id uuid primary key default gen_random_uuid(),
   lancamento_id uuid not null references lancamentos (id) on delete cascade,
   owner_id uuid not null references auth.users (id),
   motivo text not null,
-  categoria text not null default 'outro' check (categoria in ('insumo', 'pessoal', 'fim_expediente', 'outro')),
+  outro boolean not null default false,
   inicio timestamptz not null,
   fim timestamptz,
-  outro boolean not null default false
+  constraint pausa_motivo_do_app check (
+    (
+      outro = false
+      and motivo in (
+        'Faltando peça',
+        'Faltando vidro',
+        'Problemas elétricos',
+        'Problemas com vidro',
+        'Aguardando etapa anterior',
+        'Aguardando vidraceiro',
+        'Aguardando ajuste da produção',
+        'Impasse na resolução de um problema',
+        'Fim de expediente'
+      )
+    )
+    or (
+      outro = true
+      and char_length(btrim(motivo)) between 1 and 60
+      and motivo <> 'Fim de expediente'
+    )
+  )
 );
 
 create table if not exists atribuicoes (
@@ -113,6 +140,65 @@ create table if not exists vinculos_legado (
   confirmado_em timestamptz not null default now()
 );
 
+-- Nome genérico. A restrição impede cravar Concept no nome da equipe.
+create table if not exists equipes (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references organizacoes (id) on delete cascade,
+  nome text not null default 'Equipe de Produção',
+  constraint equipe_sem_marca_fixa check (nome !~* 'concept')
+);
+
+create table if not exists equipe_membros (
+  equipe_id uuid not null references equipes (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  setor text,
+  prestador_id uuid references auth.users (id),
+  primary key (equipe_id, user_id)
+);
+
+-- Consentimento informado antes de compartilhar. Guarda finalidade, versão, data e escopo.
+create table if not exists consentimentos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  org_id uuid not null references organizacoes (id) on delete cascade,
+  finalidade text not null,
+  versao_texto text not null,
+  escopo jsonb not null,
+  aceito_em timestamptz not null,
+  revogado_em timestamptz
+);
+
+-- Produção já entregue pode ficar retida. Revogar não promete apagar tudo.
+-- Valor privado não entra nesta tabela.
+create table if not exists compartilhamentos (
+  id uuid primary key default gen_random_uuid(),
+  lancamento_id uuid not null references lancamentos (id) on delete cascade,
+  org_id uuid not null references organizacoes (id) on delete cascade,
+  consentimento_id uuid not null references consentimentos (id),
+  compartilhado_em timestamptz not null default now(),
+  encerrado_em timestamptz,
+  retido boolean not null default true
+);
+
+-- Uma sessão ativa por conta, no servidor. Não apaga o folhazero_v1 do aparelho.
+-- Aparelho offline só perde a nuvem quando voltar a falar com o servidor.
+create table if not exists aparelhos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  aparelho_id text not null,
+  status text not null check (status in ('ativo', 'revogado')),
+  confirmado_em timestamptz,
+  revogado_em timestamptz
+);
+
+create unique index if not exists gerente_uma_organizacao
+  on org_membros (user_id)
+  where papel = 'gerente' and status = 'ativo';
+
+create unique index if not exists aparelho_ativo_unico
+  on aparelhos (user_id)
+  where status = 'ativo';
+
 alter table perfis enable row level security;
 alter table organizacoes enable row level security;
 alter table org_membros enable row level security;
@@ -124,6 +210,11 @@ alter table pausas enable row level security;
 alter table atribuicoes enable row level security;
 alter table sync_mutacoes enable row level security;
 alter table vinculos_legado enable row level security;
+alter table equipes enable row level security;
+alter table equipe_membros enable row level security;
+alter table consentimentos enable row level security;
+alter table compartilhamentos enable row level security;
+alter table aparelhos enable row level security;
 
 -- O cliente autenticado não altera papel por UPDATE direto.
 revoke insert, update, delete on org_membros from anon, authenticated;
@@ -176,6 +267,12 @@ begin
   if not folha_sou_gerente(p_org) then
     raise exception 'somente gerente da organizacao';
   end if;
+  if p_papel = 'gerente' and exists (
+    select 1 from org_membros
+    where user_id = p_user and papel = 'gerente' and status = 'ativo' and org_id <> p_org
+  ) then
+    raise exception 'gerente ja pertence a outra empresa';
+  end if;
   update org_membros
      set papel = p_papel
    where org_id = p_org and user_id = p_user and status = 'ativo';
@@ -227,34 +324,40 @@ create policy ajustes_dono on ajustes_privados
   using (owner_id = auth.uid())
   with check (owner_id = auth.uid());
 
--- Lançamento pessoal (org nula): só o dono.
--- Lançamento de organização: gerente vê a produção da própria org;
--- equipe vê o próprio setor ou o que lhe foi atribuído; prestador vê o que é dele.
--- Nenhuma política libera outra organização.
+-- Dono sempre lê o próprio lançamento, compartilhado ou não.
+-- Gerente lê só produção compartilhada da única organização dele.
+-- Equipe lê o setor, o prestador ou a equipe que o gerente atribuiu, também só se compartilhado.
+-- Sem compartilhamento não há leitura de terceiros. Valor continua na outra tabela.
 create policy lancamentos_ler on lancamentos
   for select to authenticated
   using (
     owner_id = auth.uid()
-    or (
-      org_id is not null
-      and folha_sou_gerente(org_id)
-    )
-    or (
-      org_id is not null
-      and exists (
-        select 1 from org_membros m
-        where m.org_id = lancamentos.org_id
-          and m.user_id = auth.uid()
-          and m.status = 'ativo'
-          and m.papel = 'equipe'
-          and (
-            m.setor = lancamentos.setor
-            or exists (
-              select 1 from atribuicoes a
-              where a.lancamento_id = lancamentos.id and a.user_id = auth.uid()
-            )
-          )
-      )
+    or exists (
+      select 1
+        from compartilhamentos c
+        join org_membros m on m.org_id = c.org_id and m.user_id = auth.uid() and m.status = 'ativo'
+       where c.lancamento_id = lancamentos.id
+         and (c.encerrado_em is null or c.retido)
+         and (
+           m.papel = 'gerente'
+           or (
+             m.papel = 'equipe'
+             and (
+               m.setor = lancamentos.setor
+               or exists (
+                 select 1 from atribuicoes a
+                 where a.lancamento_id = lancamentos.id and a.user_id = auth.uid()
+               )
+               or exists (
+                 select 1
+                   from equipe_membros em
+                   join equipes eq on eq.id = em.equipe_id and eq.org_id = c.org_id
+                  where em.user_id = auth.uid()
+                    and (em.setor = lancamentos.setor or em.prestador_id = lancamentos.owner_id)
+               )
+             )
+           )
+         )
     )
   );
 
@@ -272,17 +375,28 @@ create policy pausas_ler on pausas
   using (
     owner_id = auth.uid()
     or exists (
-      select 1 from lancamentos l
-      where l.id = pausas.lancamento_id
-        and l.org_id is not null
-        and (
-          folha_sou_gerente(l.org_id)
-          or exists (
-            select 1 from org_membros m
-            where m.org_id = l.org_id and m.user_id = auth.uid() and m.status = 'ativo' and m.papel = 'equipe'
-              and (m.setor = l.setor or exists (select 1 from atribuicoes a where a.lancamento_id = l.id and a.user_id = auth.uid()))
-          )
-        )
+      select 1
+        from lancamentos l
+        join compartilhamentos c on c.lancamento_id = l.id
+        join org_membros m on m.org_id = c.org_id and m.user_id = auth.uid() and m.status = 'ativo'
+       where l.id = pausas.lancamento_id
+         and (c.encerrado_em is null or c.retido)
+         and (
+           m.papel = 'gerente'
+           or (
+             m.papel = 'equipe'
+             and (
+               m.setor = l.setor
+               or exists (select 1 from atribuicoes a where a.lancamento_id = l.id and a.user_id = auth.uid())
+               or exists (
+                 select 1 from equipe_membros em
+                 join equipes eq on eq.id = em.equipe_id and eq.org_id = c.org_id
+                 where em.user_id = auth.uid()
+                   and (em.setor = l.setor or em.prestador_id = l.owner_id)
+               )
+             )
+           )
+         )
     )
   );
 
@@ -308,6 +422,29 @@ create policy legado_proprio on vinculos_legado
   for all to authenticated
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
+
+-- Consentimento e aparelho: só a própria pessoa lê. Escrita passa por função, não por INSERT solto.
+create policy consentimento_proprio on consentimentos
+  for select to authenticated
+  using (user_id = auth.uid() or folha_sou_gerente(org_id));
+
+create policy aparelho_proprio on aparelhos
+  for select to authenticated
+  using (user_id = auth.uid());
+
+create policy compartilhamento_ler on compartilhamentos
+  for select to authenticated
+  using (
+    folha_sou_gerente(org_id)
+    or exists (select 1 from lancamentos l where l.id = compartilhamentos.lancamento_id and l.owner_id = auth.uid())
+  );
+
+revoke insert, update, delete on consentimentos from anon, authenticated;
+revoke insert, update, delete on compartilhamentos from anon, authenticated;
+revoke insert, update, delete on aparelhos from anon, authenticated;
+revoke insert, update, delete on equipes from anon, authenticated;
+revoke insert, update, delete on equipe_membros from anon, authenticated;
+grant select on equipes, equipe_membros, consentimentos, compartilhamentos, aparelhos to authenticated;
 
 -- Produtividade sem colunas de dinheiro. security invoker: respeita a RLS de lancamentos.
 create or replace view v_producao_sem_valor

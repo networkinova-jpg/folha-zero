@@ -7,6 +7,10 @@
   const KEY = 'folhazero_v1';
   const GUARD = 'folhazero_guardiao';
   const COPIA_PREFIX = 'folhazero_copia_';
+  const MOTIVOS_PAUSA_OFICIAIS = ['Faltando peça', 'Faltando vidro', 'Problemas elétricos', 'Problemas com vidro', 'Aguardando etapa anterior', 'Aguardando vidraceiro', 'Aguardando ajuste da produção', 'Impasse na resolução de um problema'];
+  const MOTIVO_FIM_EXPEDIENTE = 'Fim de expediente';
+  const OUTRO_MAX = 60;
+  const NOME_EQUIPE = 'Equipe de Produção';
 
   function texto(valor) { return valor == null ? null : String(valor); }
 
@@ -284,6 +288,61 @@
     return { ok: true, estado: 'verificada' };
   }
 
+  function ehFimExpediente(texto) {
+    const n = String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    return ['fim de expediente', 'fim do expediente', 'fim de turno', 'fim do turno'].includes(n);
+  }
+
+  function pausaParaPlano(p) {
+    const bruto = String(p && p.motivo || '').replace(/\s+/g, ' ').trim();
+    if (ehFimExpediente(bruto)) return { motivo: MOTIVO_FIM_EXPEDIENTE, outro: false, inicio: p && p.inicio || null, fim: p && p.fim || null };
+    if (!p.outro && MOTIVOS_PAUSA_OFICIAIS.includes(bruto)) return { motivo: bruto, outro: false, inicio: p.inicio || null, fim: p.fim || null };
+    return { motivo: (bruto || 'Sem motivo').slice(0, OUTRO_MAX), outro: true, inicio: p && p.inicio || null, fim: p && p.fim || null };
+  }
+
+  function guardarConsentimento(storage, registro) {
+    if (!registro || registro.confirma !== true) return { ok: false, motivo: 'sem_consentimento' };
+    if (!registro.finalidade || !registro.versaoTexto || !registro.escopo || !registro.orgId) return { ok: false, motivo: 'consentimento_incompleto' };
+    const antes = storage.getItem(KEY);
+    const g = lerGuardiao(storage);
+    g.consentimentos = Array.isArray(g.consentimentos) ? g.consentimentos : [];
+    const item = {
+      orgId: registro.orgId,
+      finalidade: registro.finalidade,
+      versaoTexto: registro.versaoTexto,
+      escopo: registro.escopo,
+      aceitoEm: registro.aceitoEm || new Date().toISOString(),
+      revogadoEm: null
+    };
+    g.consentimentos.push(item);
+    gravarGuardiao(storage, g);
+    if (storage.getItem(KEY) !== antes) throw new Error('consentimento alterou folhazero_v1');
+    return { ok: true, registro: item, apagouLocal: false };
+  }
+
+  function notarAparelho(storage, aparelhoId, evento) {
+    const antes = storage.getItem(KEY);
+    const g = lerGuardiao(storage);
+    g.aparelho = { id: aparelhoId, evento, em: new Date().toISOString(), imposicao: 'nenhuma_no_aparelho' };
+    gravarGuardiao(storage, g);
+    if (storage.getItem(KEY) !== antes) throw new Error('aparelho alterou folhazero_v1');
+    return { ok: true, apagouLocal: false, imposicaoLocal: false, limite: 'revogacao_offline_nao_e_imediata' };
+  }
+
+  function decidirLogin(pedido) {
+    const p = pedido || {};
+    if (p.senha || p.accessToken || p.serviceRole || p.refreshToken) return { ok: false, motivo: 'credencial_recusada', enviou: false };
+    if (p.plano && p.plano !== 'free') return { ok: false, motivo: 'plano_nao_permitido', enviou: false };
+    if (p.metodo === 'email') return { ok: false, motivo: 'smtp_pendente', enviou: false };
+    if (p.metodo === 'google') return { ok: false, motivo: 'aguardando_projeto_autorizado', enviou: false };
+    return { ok: false, motivo: 'sem_projeto', enviou: false };
+  }
+
+  function planoSupabasePermitido(plano) {
+    if (plano === 'free') return { ok: true, plano: 'free', regiaoPretendida: 'sa-east-1', backupGerenciado: false, semLimite: false };
+    return { ok: false, motivo: 'plano_nao_permitido' };
+  }
+
   function planoDeLinhas(doc, uid) {
     if (!uid || typeof uid !== 'string') {
       const err = new Error('uid obrigatorio');
@@ -312,7 +371,7 @@
         obs: e.obs || ''
       });
       valores.push({ client_id: e.id, owner_id: uid, valor: e.valor == null ? null : e.valor, ajudante: e.ajudante == null ? null : e.ajudante });
-      (e.pausas || []).forEach(p => pausas.push({ client_id: e.id, owner_id: uid, motivo: p.motivo || '', inicio: p.inicio || null, fim: p.fim || null, outro: !!p.outro }));
+      (e.pausas || []).forEach(p => pausas.push(Object.assign({ client_id: e.id, owner_id: uid }, pausaParaPlano(p))));
     });
     const ajustes = {
       owner_id: uid,
@@ -396,6 +455,14 @@
     sair,
     trocarUsuario,
     marcarConcluida,
+    MOTIVOS_PAUSA_OFICIAIS,
+    MOTIVO_FIM_EXPEDIENTE,
+    NOME_EQUIPE,
+    pausaParaPlano,
+    guardarConsentimento,
+    notarAparelho,
+    decidirLogin,
+    planoSupabasePermitido,
     planoDeLinhas,
     enviarSeConfigurado,
     resumir,

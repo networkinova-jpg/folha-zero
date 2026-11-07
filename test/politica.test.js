@@ -10,7 +10,11 @@ const estado = {
     { orgId: 'beta', userId: 'diego', papel: 'gerente', setor: '', status: 'ativo' },
     { orgId: 'alfa', userId: 'eva', papel: 'equipe', setor: 'Setor Exemplo B', status: 'revogado' }
   ],
-  atribuicoes: [{ lancamentoId: 'carro-3', userId: 'bruno' }]
+  atribuicoes: [{ lancamentoId: 'carro-3', userId: 'bruno' }],
+  compartilhamentos: [
+    { lancamentoId: 'carro-2', orgId: 'alfa', encerradoEm: null, retido: true },
+    { lancamentoId: 'carro-3', orgId: 'alfa', encerradoEm: null, retido: true }
+  ]
 };
 
 const pessoal = { id: 'carro-1', ownerId: 'ana', orgId: null, setor: 'Setor Exemplo A' };
@@ -36,6 +40,8 @@ test('gerente vê a própria org e não a outra, equipe respeita setor e atribui
   assert.equal(Pol.podeLerLancamento(estado, { uid: 'bruno' }, outroSetor), true);
   assert.equal(Pol.podeLerLancamento(estado, { uid: 'eva' }, daOrg), false);
   assert.equal(Pol.podeLerLancamento(estado, { uid: 'bruno' }, pessoal), false);
+  const semShare = { id: 'carro-9', ownerId: 'ana', orgId: null, setor: 'Setor Exemplo A' };
+  assert.equal(Pol.podeLerLancamento(estado, { uid: 'carla' }, semShare), false);
 });
 
 test('ninguém se promove e só gerente revoga convite da própria org', () => {
