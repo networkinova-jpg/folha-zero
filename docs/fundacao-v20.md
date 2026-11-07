@@ -1,10 +1,10 @@
 # Fundação da v20 (sem publicação)
 
-Esta etapa fica só no branch de desenvolvimento. Não houve merge, push em `main` nem deploy do GitHub Pages. O projeto Supabase `vyxfjdhhlzluwfesxgra` existe, em São Paulo, no plano Free, e o banco continua vazio: o schema não foi aplicado.
+Esta etapa fica só no branch de desenvolvimento. Não houve merge, push em `main` nem deploy do GitHub Pages. O projeto Supabase `vyxfjdhhlzluwfesxgra` existe, em São Paulo, no plano Free. A migração base foi aplicada pelo conector como versão `20261107210528` (o arquivo do repositório é `20261107210000_base_segura.sql`; o conteúdo é o mesmo e não deve ser reaplicado). As tabelas existem e não há linhas, nem em `auth.users`.
 
 ## Revisão de 07/11
 
-Ricardo fechou o escopo abaixo. O projeto Free existe e está vazio. Ainda não há empresa piloto nem gerente piloto, e o schema corrigido ainda não foi aplicado nele.
+Ricardo fechou o escopo abaixo. A base segura já está no projeto e as tabelas seguem sem linhas. Ainda não há empresa piloto nem gerente piloto. A migração da cópia privada ainda não foi aplicada.
 
 - Gestão de Produção é um módulo só, com equipe e gerente. O gerente coordena por setor, por prestador ou cria equipe. O nome genérico da equipe é Equipe de Produção. Concept não é nome fixo de equipe.
 - INOVA Blindagem aparece só como tenant fictício de teste nesta rodada. Não entrou na lista real de empresas do app e não é semeada em `folhazero_v1`.
@@ -58,7 +58,7 @@ Não liga login Google, e-mail e senha, backup automático de verdade, restaura�
 
 ## Testes executados
 
-`npm test`: 29 testes, todos passando. O último sobe um Postgres local, aplica a migração duas vezes e roda ataques de isolamento.
+`npm test`: 34 testes, todos passando. Um deles sobe um Postgres local, aplica a base duas vezes, a migração da cópia privada e os ataques. Outro confere o projeto real só com a chave publishable: saúde 200, Google desligado e tabela de snapshot ausente. Nenhum cadastro foi criado.
 
 - Backup idempotente, quota, prévia, confirmação, cópia inválida e aborto da restauração.
 - Conta vazia, mescla sem duplicar id, troca de usuário, logout, ack parcial e ack divergente.
@@ -78,15 +78,26 @@ Captura mobile em 390x844, com carros fictícios OS-TESTE, operador "Pessoa Exem
 
 No aparelho, sem projeto: a seção Acesso explica que o login está desligado, os campos ficam inativos e a senha não é gravada. O painel do proprietário não abre pelo nome de quem usa o app. Com uma sessão de teste marcada como confirmada pelo servidor, a lista local de solicitações e de licenças pode ser alterada só em `folhazero_admin_meta`. Isso não cria conta, não envia convite e não mostra carros nem valores.
 
-Pendente de integração real: o Ricardo validar e aplicar a migração no projeto vazio pelo conector. Também faltam ligar a chave pública, provar o login Google, validar o SMTP próprio e publicar a função de borda. Nada disso foi feito neste passo. O banco remoto continua vazio.
+A tela `acesso-teste.html` fala com o projeto usando só a chave publishable. Google está desligado no projeto. Criar conta por e-mail está bloqueado nesta tela porque a confirmação usaria o envio padrão. Entrar com uma conta já existente é o único envio de senha, e ele não cria usuário. A cópia privada depende da migração `20261107223000_snapshot_privado.sql`, que ainda não está no projeto. Schemas expostos da API, em especial se `private` ficou de fora, não foram conferidos: o conector não mostrou essa configuração.
 
 ## Testes não executados
 
-- RLS no projeto Supabase. O teste real foi num Postgres local descartável. O projeto `vyxfjdhhlzluwfesxgra` não recebeu este SQL.
+- Relação dos schemas expostos na API. Não dá para ver pelo conector se `private` está oculto. Tratar como pendência.
+- Login Google, SMTP próprio, cadastro de cliente e subida de lançamento real. A tela de teste não dispara esses envios.
 - Envio real de e-mail, login Google contra um provedor, upload e restauração noutro aparelho.
 - Revogação de aparelho com o servidor fora do ar. O teste cobre a decisão e o fato de o local permanecer. Não cobre um aparelho real offline.
 - Duas abas reais do navegador ao mesmo tempo. A mescla por id está testada em memória.
 - Publicação no GitHub Pages. O cache do service worker desta branch é `folha-zero-v20`. O site no ar continua a v19.
+
+## Checklist para ligar o login de verdade
+
+Sem colar segredo em conversa.
+
+1. Aplicar pelo conector só `supabase/migrations/20261107223000_snapshot_privado.sql`. Não reaplicar a base `20261107210528`.
+2. No painel do projeto, conferir se a API expõe só `public`. O schema `private` precisa ficar de fora. Isso ainda não foi verificado.
+3. Google: criar o cliente OAuth no Google Cloud, com a origem da tela de teste, e preencher no Auth do Supabase. O provedor está desligado hoje.
+4. E-mail de cliente: configurar SMTP próprio. O envio padrão não serve. Enquanto isso, a tela não cria conta.
+5. No computador de teste: `python3 -m http.server 8765` e abrir `http://127.0.0.1:8765/acesso-teste.html`. Não é o GitHub Pages.
 
 ## Rollout quando houver autorização
 

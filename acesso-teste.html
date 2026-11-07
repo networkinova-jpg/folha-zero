@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folha Zero: teste de acesso</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">FZ</span><div><strong>Teste de acesso</strong><small>FIXTURE de tela. Não é o app do dia a dia.</small></div></div>
+</header>
+<main>
+  <div class="card">
+    <h2>Conexão</h2>
+    <p class="acesso-aviso">Esta página é separada do aplicativo. Quem já usa o Folha Zero não passa por aqui. Nenhum lançamento é lido nem enviado ao abrir.</p>
+    <p id="st-conexao" class="hint">Conferindo o projeto…</p>
+    <p id="st-sessao" class="hint"></p>
+    <p id="st-snapshot" class="hint"></p>
+  </div>
+  <div class="card">
+    <h2>Entrar</h2>
+    <p id="st-google" class="hint"></p>
+    <button type="button" class="btn ghost big" id="btn-google" disabled>Entrar com Google</button>
+    <p id="st-email" class="hint"></p>
+    <form id="form-entrar">
+      <label>E-mail<input id="acesso-email" type="email" autocomplete="username"></label>
+      <label>Senha<input id="acesso-senha" type="password" autocomplete="current-password"></label>
+      <button type="submit" class="btn primary big" id="btn-entrar">Entrar com conta já existente</button>
+    </form>
+    <p id="st-login" class="hint"></p>
+    <button type="button" class="btn ghost" id="btn-sair">Sair desta sessão</button>
+  </div>
+  <div class="card">
+    <h2>Cópia individual</h2>
+    <p class="hint">FIXTURE: o envio só ocorre se você marcar a autorização e já tiver uma sessão. Conta sem cópias não substitui o que está neste aparelho.</p>
+    <label><input id="autorizo" type="checkbox"> Autorizo enviar o documento deste navegador para a minha conta</label>
+    <button type="button" class="btn primary" id="btn-enviar" disabled>Enviar cópia</button>
+    <p id="st-copia" class="hint"></p>
+    <button type="button" class="btn ghost" id="btn-listar">Listar cópias da sessão</button>
+    <ul id="lista-copias"></ul>
+    <button type="button" class="btn ghost" id="btn-confirmar">Confirmar restauração da prévia</button>
+    <p id="st-restauro" class="hint"></p>
+  </div>
+  <p class="hint"><a href="index.html">Voltar ao aplicativo</a></p>
+</main>
+<script type="module" src="acesso-teste.bundle.js"></script>
+</body>
+</html>

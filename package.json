@@ -2,9 +2,11 @@
   "name": "folha-zero",
   "private": true,
   "scripts": {
-    "test": "node --test test/persistencia.test.js test/politica.test.js test/escopo.test.js test/proprietario.test.js test/relatorio.test.js test/sql.test.js"
+    "test": "node --test test/persistencia.test.js test/politica.test.js test/escopo.test.js test/proprietario.test.js test/snapshot-remoto.test.js test/relatorio.test.js test/sql.test.js test/conexao-publica.test.js"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "esbuild": "^0.28.2",
     "jsdom": "^26.1.0",
     "playwright-core": "^1.56.1"
   }
