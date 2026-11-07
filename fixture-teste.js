@@ -1,7 +1,6 @@
 /* Conjunto fictício da tela de teste.
    Grava só em chaves próprias. Não lê nem escreve o aplicativo.
-   A superfície remota prevista é copias_fixture_teste, separada das cópias reais.
-   O envio continua bloqueado até o parent aprovar o SQL corrigido. */
+   A nuvem usa só copias_fixture_teste, no site isolado, com a fixture canônica. */
 (function (root) {
   const CHAVE = 'folhazero_teste_fixture';
   const CHAVE_B = 'folhazero_teste_fixture_b';
@@ -9,6 +8,8 @@
   const LIMITE_BYTES = 65536;
   const SUPERFICIE = 'copias_fixture_teste';
   const MAX_COPIAS = 1;
+  const SHA256_CANON = '57228492711d49c94d20903583163d3241c7861859d12164a5fdc8ac97b2e365';
+  const PAGINA_NUVEM = 'https://wild-voice-4f08.folha-zero-networkinova.workers.dev/acesso-teste';
 
   function gerarConjunto() {
     return {
@@ -124,16 +125,74 @@
     return comparar(doc, JSON.parse(storageB.getItem(CHAVE_B)));
   }
 
-  function tentarEnvioRemoto(sessao, agoraMs) {
+  function paginaPermitida(location) {
+    try {
+      const u = new URL(location.href);
+      if (u.hostname === 'networkinova-jpg.github.io') return { ok: false, motivo: 'origem_producao' };
+      if (u.protocol !== 'https:' || u.origin + u.pathname !== PAGINA_NUVEM) return { ok: false, motivo: 'origem_nao_autorizada' };
+      return { ok: true };
+    } catch (_) {
+      return { ok: false, motivo: 'origem_nao_autorizada' };
+    }
+  }
+
+  function sessaoViva(sessao, agoraMs) {
     const expira = sessao && sessao.expires_at;
-    const viva = !!(sessao && sessao.user && sessao.user.id && expira && expira * 1000 > agoraMs);
-    if (!viva) return { ok: false, enviou: false, motivo: 'sessao_ausente' };
+    return !!(sessao && sessao.user && sessao.user.id && expira && expira * 1000 > agoraMs);
+  }
+
+  function planejarEnvio(opts) {
+    const origem = paginaPermitida(opts.location);
+    if (!origem.ok) return { ok: false, enviou: false, motivo: origem.motivo };
+    if (!sessaoViva(opts.sessao, opts.agoraMs)) return { ok: false, enviou: false, motivo: 'sessao_ausente' };
+    const doc = gerarConjunto();
+    if (opts.documento && canon(opts.documento) !== canon(doc)) return { ok: false, enviou: false, motivo: 'nao_canonico' };
     return {
-      ok: false,
+      ok: true,
       enviou: false,
-      motivo: 'envio_bloqueado',
-      pendencias: ['sql_corrigido_sem_aprovacao', 'superficie_copias_fixture_teste']
+      pedido: { owner_id: opts.sessao.user.id, sha256: SHA256_CANON, bytes: 1, documento: doc }
     };
+  }
+
+  function resumirErro(error) {
+    const codigo = String(error && error.code || '');
+    if (codigo === '23505') return 'ja_existe';
+    if (codigo === '23514') return 'carga_recusada';
+    if (codigo === '42501' || codigo === 'PGRST301') return 'sessao_ausente';
+    return 'envio_recusado';
+  }
+
+  async function enviarComCliente(cliente, pedido) {
+    if (!pedido || pedido.sha256 !== SHA256_CANON || canon(pedido.documento) !== canon(gerarConjunto())) {
+      return { ok: false, enviou: false, motivo: 'nao_canonico' };
+    }
+    const { error } = await cliente.from(SUPERFICIE).insert({
+      owner_id: pedido.owner_id,
+      sha256: pedido.sha256,
+      bytes: pedido.bytes,
+      documento: pedido.documento
+    });
+    if (!error) return { ok: true, enviou: true, jaExistia: false };
+    const motivo = resumirErro(error);
+    if (motivo === 'ja_existe') return { ok: true, enviou: false, jaExistia: true, motivo };
+    return { ok: false, enviou: false, motivo };
+  }
+
+  async function listarComCliente(cliente) {
+    const { data, error } = await cliente.from(SUPERFICIE).select('sha256,bytes,criado_em').order('criado_em', { ascending: false }).limit(1);
+    if (error) return { ok: false, motivo: 'lista_recusada', itens: [] };
+    return { ok: true, itens: (data || []).map((item) => ({ sha256: item.sha256, bytes: item.bytes })) };
+  }
+
+  async function restaurarComCliente(cliente, storage) {
+    const { data, error } = await cliente.from(SUPERFICIE).select('sha256,documento').limit(1);
+    if (error) return { ok: false, escreveu: false, motivo: 'leitura_recusada' };
+    const doc = gerarConjunto();
+    const alvo = (data || []).find((row) => row && row.sha256 === SHA256_CANON && canon(row.documento) === canon(doc));
+    if (!alvo) return { ok: false, escreveu: false, motivo: 'canonico_ausente' };
+    const gravado = gravarFixture(storage, CHAVE, doc);
+    if (!gravado.ok) return { ok: false, escreveu: false, motivo: gravado.motivo };
+    return Object.assign({ escreveu: true }, comparar(doc, JSON.parse(storage.getItem(CHAVE))));
   }
 
   const api = {
@@ -143,14 +202,20 @@
     LIMITE_BYTES,
     SUPERFICIE,
     MAX_COPIAS,
+    SHA256_CANON,
+    PAGINA_NUVEM,
+    paginaPermitida,
+    planejarEnvio,
+    enviarComCliente,
+    listarComCliente,
+    restaurarComCliente,
     canon,
     gerarConjunto,
     validarDocumento,
     gravarFixture,
     gerarEGravar,
     comparar,
-    simularOutroNavegador,
-    tentarEnvioRemoto
+    simularOutroNavegador
   };
   root.FolhaFixture = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

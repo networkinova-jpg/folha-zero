@@ -140,6 +140,8 @@ var require_fixture_teste = __commonJS({
       const LIMITE_BYTES = 65536;
       const SUPERFICIE = "copias_fixture_teste";
       const MAX_COPIAS = 1;
+      const SHA256_CANON = "57228492711d49c94d20903583163d3241c7861859d12164a5fdc8ac97b2e365";
+      const PAGINA_NUVEM = "https://wild-voice-4f08.folha-zero-networkinova.workers.dev/acesso-teste";
       function gerarConjunto() {
         return {
           version: 2,
@@ -250,16 +252,68 @@ var require_fixture_teste = __commonJS({
         if (!gravado.ok) return gravado;
         return comparar(doc, JSON.parse(storageB.getItem(CHAVE_B)));
       }
-      function tentarEnvioRemoto(sessao, agoraMs) {
+      function paginaPermitida(location2) {
+        try {
+          const u = new URL(location2.href);
+          if (u.hostname === "networkinova-jpg.github.io") return { ok: false, motivo: "origem_producao" };
+          if (u.protocol !== "https:" || u.origin + u.pathname !== PAGINA_NUVEM) return { ok: false, motivo: "origem_nao_autorizada" };
+          return { ok: true };
+        } catch (_) {
+          return { ok: false, motivo: "origem_nao_autorizada" };
+        }
+      }
+      function sessaoViva(sessao, agoraMs) {
         const expira = sessao && sessao.expires_at;
-        const viva = !!(sessao && sessao.user && sessao.user.id && expira && expira * 1e3 > agoraMs);
-        if (!viva) return { ok: false, enviou: false, motivo: "sessao_ausente" };
+        return !!(sessao && sessao.user && sessao.user.id && expira && expira * 1e3 > agoraMs);
+      }
+      function planejarEnvio(opts) {
+        const origem = paginaPermitida(opts.location);
+        if (!origem.ok) return { ok: false, enviou: false, motivo: origem.motivo };
+        if (!sessaoViva(opts.sessao, opts.agoraMs)) return { ok: false, enviou: false, motivo: "sessao_ausente" };
+        const doc = gerarConjunto();
+        if (opts.documento && canon(opts.documento) !== canon(doc)) return { ok: false, enviou: false, motivo: "nao_canonico" };
         return {
-          ok: false,
+          ok: true,
           enviou: false,
-          motivo: "envio_bloqueado",
-          pendencias: ["sql_corrigido_sem_aprovacao", "superficie_copias_fixture_teste"]
+          pedido: { owner_id: opts.sessao.user.id, sha256: SHA256_CANON, bytes: 1, documento: doc }
         };
+      }
+      function resumirErro(error) {
+        const codigo = String(error && error.code || "");
+        if (codigo === "23505") return "ja_existe";
+        if (codigo === "23514") return "carga_recusada";
+        if (codigo === "42501" || codigo === "PGRST301") return "sessao_ausente";
+        return "envio_recusado";
+      }
+      async function enviarComCliente(cliente, pedido) {
+        if (!pedido || pedido.sha256 !== SHA256_CANON || canon(pedido.documento) !== canon(gerarConjunto())) {
+          return { ok: false, enviou: false, motivo: "nao_canonico" };
+        }
+        const { error } = await cliente.from(SUPERFICIE).insert({
+          owner_id: pedido.owner_id,
+          sha256: pedido.sha256,
+          bytes: pedido.bytes,
+          documento: pedido.documento
+        });
+        if (!error) return { ok: true, enviou: true, jaExistia: false };
+        const motivo = resumirErro(error);
+        if (motivo === "ja_existe") return { ok: true, enviou: false, jaExistia: true, motivo };
+        return { ok: false, enviou: false, motivo };
+      }
+      async function listarComCliente(cliente) {
+        const { data, error } = await cliente.from(SUPERFICIE).select("sha256,bytes,criado_em").order("criado_em", { ascending: false }).limit(1);
+        if (error) return { ok: false, motivo: "lista_recusada", itens: [] };
+        return { ok: true, itens: (data || []).map((item) => ({ sha256: item.sha256, bytes: item.bytes })) };
+      }
+      async function restaurarComCliente(cliente, storage) {
+        const { data, error } = await cliente.from(SUPERFICIE).select("sha256,documento").limit(1);
+        if (error) return { ok: false, escreveu: false, motivo: "leitura_recusada" };
+        const doc = gerarConjunto();
+        const alvo = (data || []).find((row) => row && row.sha256 === SHA256_CANON && canon(row.documento) === canon(doc));
+        if (!alvo) return { ok: false, escreveu: false, motivo: "canonico_ausente" };
+        const gravado = gravarFixture(storage, CHAVE, doc);
+        if (!gravado.ok) return { ok: false, escreveu: false, motivo: gravado.motivo };
+        return Object.assign({ escreveu: true }, comparar(doc, JSON.parse(storage.getItem(CHAVE))));
       }
       const api = {
         CHAVE,
@@ -268,14 +322,20 @@ var require_fixture_teste = __commonJS({
         LIMITE_BYTES,
         SUPERFICIE,
         MAX_COPIAS,
+        SHA256_CANON,
+        PAGINA_NUVEM,
+        paginaPermitida,
+        planejarEnvio,
+        enviarComCliente,
+        listarComCliente,
+        restaurarComCliente,
         canon,
         gerarConjunto,
         validarDocumento,
         gravarFixture,
         gerarEGravar,
         comparar,
-        simularOutroNavegador,
-        tentarEnvioRemoto
+        simularOutroNavegador
       };
       root.FolhaFixture = api;
       if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -21253,18 +21313,37 @@ function pintar(estado) {
   const bloqueada = G.origemProducao(window.location.origin);
   texto("st-google", bloqueada ? "Esta origem \xE9 a do aplicativo publicado. O login de teste n\xE3o abre aqui." : estado.google ? "Google ligado no projeto. O retorno \xE9 esta mesma p\xE1gina." : "Pendente: o provedor Google est\xE1 desligado no projeto.");
   texto("st-email", "Entrar com e-mail e senha s\xF3 funciona para uma conta que j\xE1 exista. Criar conta est\xE1 desligado: a confirma\xE7\xE3o sairia pelo envio padr\xE3o, que n\xE3o serve para clientes.");
-  texto("st-snapshot", "A nuvem continua desligada. O envio remoto segue bloqueado at\xE9 a aprova\xE7\xE3o da prote\xE7\xE3o corrigida.");
+  const permitida = F.paginaPermitida(window.location);
+  if (!permitida.ok) {
+    texto("st-snapshot", permitida.motivo === "origem_producao" ? "O GitHub Pages fica bloqueado. O teste de c\xF3pia s\xF3 abre no site isolado." : "O envio s\xF3 abre em wild-voice-4f08.folha-zero-networkinova.workers.dev/acesso-teste.");
+  } else if (!estado.sessao) {
+    texto("st-snapshot", "Entre com o Google nesta conta. O envio \xE9 manual e grava s\xF3 o conjunto fict\xEDcio.");
+  } else {
+    texto("st-snapshot", "Sess\xE3o desta conta. O papel de propriet\xE1rio n\xE3o v\xEA estes lan\xE7amentos. O envio n\xE3o \xE9 autom\xE1tico.");
+  }
   texto("st-sessao", estado.sessao ? "Sess\xE3o ativa neste navegador." : "Sem sess\xE3o de usu\xE1rio do Folha Zero.");
   const google = $("btn-google");
   if (google) google.disabled = bloqueada || !estado.google;
   const entrar = $("btn-entrar");
   if (entrar) entrar.disabled = !estado.email;
-  const enviar = $("btn-enviar");
-  if (enviar) enviar.disabled = true;
-  const listar = $("btn-listar");
-  if (listar) listar.disabled = true;
-  const confirmar = $("btn-confirmar");
-  if (confirmar) confirmar.disabled = true;
+  const nuvem = permitida.ok && !!estado.sessao;
+  ["btn-enviar", "btn-listar", "btn-restaurar"].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = !nuvem;
+  });
+}
+function mensagemNuvem(motivo) {
+  if (motivo === "origem_producao") return "O GitHub Pages n\xE3o envia esta c\xF3pia. Use o site de teste isolado.";
+  if (motivo === "origem_nao_autorizada") return "Este endere\xE7o n\xE3o envia. Abra o site de teste isolado.";
+  if (motivo === "sessao_ausente") return "Entre com o Google nesta conta antes de enviar. Nada foi gravado.";
+  if (motivo === "ja_existe") return "Esta conta j\xE1 tem a c\xF3pia fict\xEDcia. Nada foi apagado. Recupere na chave de teste.";
+  if (motivo === "canonico_ausente") return "N\xE3o h\xE1 a c\xF3pia fict\xEDcia nesta conta. Nada foi gravado na chave de teste.";
+  if (motivo === "nao_canonico" || motivo === "carga_recusada") return "A carga n\xE3o \xE9 o conjunto fict\xEDcio. Nada foi gravado.";
+  return "N\xE3o foi poss\xEDvel falar com a c\xF3pia fict\xEDcia. Nada do aplicativo foi lido.";
+}
+async function sessaoAtual(cliente) {
+  const { data } = await cliente.auth.getSession();
+  return data && data.session;
 }
 async function iniciar() {
   const hrefInicial = window.location.href;
@@ -21317,9 +21396,40 @@ async function iniciar() {
     const r = F.simularOutroNavegador(localStorage, outro);
     texto("st-restauro", r.ok ? "Integridade confere no outro contexto de teste. Ids " + r.ids.join(", ") + ". A nuvem n\xE3o recebeu esta c\xF3pia." : "Sem confer\xEAncia: " + (r.motivo || "falha") + ".");
   });
-  $("btn-enviar").addEventListener("click", () => {
-    const r = F.tentarEnvioRemoto(null, Date.now());
-    texto("st-copia", r.enviou ? "Envio inesperado." : "Envio remoto bloqueado. Nenhuma c\xF3pia saiu deste navegador.");
+  $("btn-enviar").addEventListener("click", async () => {
+    const plano = F.planejarEnvio({
+      location: window.location,
+      sessao: await sessaoAtual(cliente),
+      agoraMs: Date.now(),
+      documento: F.gerarConjunto()
+    });
+    if (!plano.ok) {
+      texto("st-copia", mensagemNuvem(plano.motivo));
+      return;
+    }
+    const r = await F.enviarComCliente(cliente, plano.pedido);
+    texto("st-copia", r.jaExistia ? mensagemNuvem("ja_existe") : r.enviou ? "Conjunto fict\xEDcio gravado nesta conta. O aplicativo n\xE3o foi lido." : mensagemNuvem(r.motivo));
+  });
+  $("btn-listar").addEventListener("click", async () => {
+    if (!F.paginaPermitida(window.location).ok || !F.planejarEnvio({ location: window.location, sessao: await sessaoAtual(cliente), agoraMs: Date.now() }).ok) {
+      texto("st-copia", mensagemNuvem(F.paginaPermitida(window.location).motivo || "sessao_ausente"));
+      return;
+    }
+    const lista = await F.listarComCliente(cliente);
+    if (!lista.ok) {
+      texto("st-copia", mensagemNuvem(lista.motivo));
+      return;
+    }
+    texto("st-copia", lista.itens.length ? "H\xE1 " + lista.itens.length + " c\xF3pia fict\xEDcia nesta conta. O conte\xFAdo n\xE3o \xE9 mostrado aqui." : "Nenhuma c\xF3pia fict\xEDcia nesta conta.");
+  });
+  $("btn-restaurar").addEventListener("click", async () => {
+    const plano = F.planejarEnvio({ location: window.location, sessao: await sessaoAtual(cliente), agoraMs: Date.now() });
+    if (!plano.ok) {
+      texto("st-restauro", mensagemNuvem(plano.motivo));
+      return;
+    }
+    const r = await F.restaurarComCliente(cliente, localStorage);
+    texto("st-restauro", r.ok ? "Integridade confere na chave de teste. Ids " + r.ids.join(", ") + ". O aplicativo n\xE3o foi alterado." : mensagemNuvem(r.motivo));
   });
 }
 function memoria() {

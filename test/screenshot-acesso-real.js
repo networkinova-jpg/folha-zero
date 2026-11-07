@@ -41,7 +41,7 @@ function servir() {
   if (!/alcançado/.test(conexao)) throw new Error('conexao: ' + conexao);
   if (!/Google ligado no projeto/.test(google)) throw new Error('google: ' + google);
   if (!/Criar conta está desligado/.test(email)) throw new Error('email: ' + email);
-  if (!/nuvem continua desligada/.test(snap)) throw new Error('snapshot: ' + snap);
+  if (!/wild-voice-4f08/.test(snap)) throw new Error('snapshot: ' + snap);
   if (!(await page.locator('#btn-google').isEnabled())) throw new Error('google desabilitado fora da origem publicada');
   const posts = [];
   page.on('request', (req) => {

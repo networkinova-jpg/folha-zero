@@ -58,7 +58,7 @@ Não força login no aplicativo do dia a dia, não cria conta, não envia cópia
 
 ## Testes executados
 
-`npm test`: 45 testes, todos passando. Um sobe um Postgres local, aplica a base duas vezes, a cópia privada e a proteção da fixture duas vezes. Os ataques incluem negativos aninhados e oito sessões simultâneas da mesma conta. Nada disso foi aplicado no projeto remoto. Nenhuma conta foi criada.
+`npm test`: 47 testes, todos passando. Um sobe um Postgres local, aplica a base duas vezes, a cópia privada e a proteção da fixture duas vezes. Os ataques incluem negativos aninhados e oito sessões simultâneas da mesma conta. Nada disso foi aplicado no projeto remoto. Nenhuma conta foi criada.
 
 - Backup idempotente, quota, prévia, confirmação, cópia inválida e aborto da restauração.
 - Conta vazia, mescla sem duplicar id, troca de usuário, logout, ack parcial e ack divergente.
@@ -80,7 +80,7 @@ No aparelho, sem projeto: a seção Acesso explica que o login está desligado, 
 
 A tela `acesso-teste.html` fala com o projeto usando só a chave publishable e o fluxo PKCE. O botão Google chama `signInWithOAuth` com retorno igual à própria página. A origem `networkinova-jpg.github.io` fica bloqueada. O login Google já foi concluído por Ricardo no site isolado. Esta etapa não repete esse login.
 
-A cópia fictícia fica na chave `folhazero_teste_fixture`. A tela não lê `folhazero_v1` e não restaura o aplicativo. O envio à nuvem permanece desligado até nova aprovação. O arquivo `20261107234500_snapshot_fixture.sql` do commit `014c3301` não foi aplicado. O texto novo cria só `public.copias_fixture_teste`, exige a árvore canônica inteira e limita uma linha por conta com índice único. Não há trigger em `snapshots_privados`. No plano Free o banco fica somente leitura acima de 500 MB e não há PITR. A retenção do aplicativo continua pendente.
+A cópia fictícia fica na chave `folhazero_teste_fixture`. A tela não lê `folhazero_v1` e não restaura o aplicativo. No site isolado, com sessão, o envio manual grava só a fixture canônica em `copias_fixture_teste`. Se a conta já tem a linha, nada é apagado e a recuperação continua disponível. O GitHub Pages não envia. O teste ponta a ponta no projeto fica com Ricardo. No plano Free o banco fica somente leitura acima de 500 MB e não há PITR. A retenção do aplicativo continua pendente.
 
 Em 07/11/2026 a Data API, com a chave publishable, respondeu HTTP 406 e código PGRST106 ao schema `private`. A função de mesmo nome em `public` respondeu 404 PGRST202. O schema `private` está fora da API nesta verificação. O envio remoto continua fechado porque a migração de validação não foi aplicada no projeto.
 

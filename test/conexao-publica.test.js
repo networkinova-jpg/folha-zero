@@ -33,4 +33,14 @@ test('a tela usa só a chave publishable e o projeto responde sem criar conta', 
   assert.equal(login.includes('networkinova-jpg.github.io'), true);
   const tabela = await fetch(cfg.url + '/rest/v1/snapshots_privados?select=id&limit=0', { headers });
   assert.equal(tabela.status, 401);
+  const fixture = await fetch(cfg.url + '/rest/v1/copias_fixture_teste?select=id&limit=0', { headers });
+  assert.equal(fixture.status, 401);
+  const corpo = await fixture.json();
+  assert.equal(corpo.code, '42501');
+  const privado = await fetch(cfg.url + '/rest/v1/rpc/fixture_canonica', {
+    method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json', 'Content-Profile': 'private' }, headers),
+    body: '{}'
+  });
+  assert.equal(privado.status, 406);
 });

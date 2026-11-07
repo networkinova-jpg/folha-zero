@@ -61,18 +61,41 @@ function pintar(estado) {
       ? 'Google ligado no projeto. O retorno é esta mesma página.'
       : 'Pendente: o provedor Google está desligado no projeto.');
   texto('st-email', 'Entrar com e-mail e senha só funciona para uma conta que já exista. Criar conta está desligado: a confirmação sairia pelo envio padrão, que não serve para clientes.');
-  texto('st-snapshot', 'A nuvem continua desligada. O envio remoto segue bloqueado até a aprovação da proteção corrigida.');
+  const permitida = F.paginaPermitida(window.location);
+  if (!permitida.ok) {
+    texto('st-snapshot', permitida.motivo === 'origem_producao'
+      ? 'O GitHub Pages fica bloqueado. O teste de cópia só abre no site isolado.'
+      : 'O envio só abre em wild-voice-4f08.folha-zero-networkinova.workers.dev/acesso-teste.');
+  } else if (!estado.sessao) {
+    texto('st-snapshot', 'Entre com o Google nesta conta. O envio é manual e grava só o conjunto fictício.');
+  } else {
+    texto('st-snapshot', 'Sessão desta conta. O papel de proprietário não vê estes lançamentos. O envio não é automático.');
+  }
   texto('st-sessao', estado.sessao ? 'Sessão ativa neste navegador.' : 'Sem sessão de usuário do Folha Zero.');
   const google = $('btn-google');
   if (google) google.disabled = bloqueada || !estado.google;
   const entrar = $('btn-entrar');
   if (entrar) entrar.disabled = !estado.email;
-  const enviar = $('btn-enviar');
-  if (enviar) enviar.disabled = true;
-  const listar = $('btn-listar');
-  if (listar) listar.disabled = true;
-  const confirmar = $('btn-confirmar');
-  if (confirmar) confirmar.disabled = true;
+  const nuvem = permitida.ok && !!estado.sessao;
+  ['btn-enviar', 'btn-listar', 'btn-restaurar'].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = !nuvem;
+  });
+}
+
+function mensagemNuvem(motivo) {
+  if (motivo === 'origem_producao') return 'O GitHub Pages não envia esta cópia. Use o site de teste isolado.';
+  if (motivo === 'origem_nao_autorizada') return 'Este endereço não envia. Abra o site de teste isolado.';
+  if (motivo === 'sessao_ausente') return 'Entre com o Google nesta conta antes de enviar. Nada foi gravado.';
+  if (motivo === 'ja_existe') return 'Esta conta já tem a cópia fictícia. Nada foi apagado. Recupere na chave de teste.';
+  if (motivo === 'canonico_ausente') return 'Não há a cópia fictícia nesta conta. Nada foi gravado na chave de teste.';
+  if (motivo === 'nao_canonico' || motivo === 'carga_recusada') return 'A carga não é o conjunto fictício. Nada foi gravado.';
+  return 'Não foi possível falar com a cópia fictícia. Nada do aplicativo foi lido.';
+}
+
+async function sessaoAtual(cliente) {
+  const { data } = await cliente.auth.getSession();
+  return data && data.session;
 }
 
 async function iniciar() {
@@ -128,9 +151,39 @@ async function iniciar() {
       ? 'Integridade confere no outro contexto de teste. Ids ' + r.ids.join(', ') + '. A nuvem não recebeu esta cópia.'
       : 'Sem conferência: ' + (r.motivo || 'falha') + '.');
   });
-  $('btn-enviar').addEventListener('click', () => {
-    const r = F.tentarEnvioRemoto(null, Date.now());
-    texto('st-copia', r.enviou ? 'Envio inesperado.' : 'Envio remoto bloqueado. Nenhuma cópia saiu deste navegador.');
+  $('btn-enviar').addEventListener('click', async () => {
+    const plano = F.planejarEnvio({
+      location: window.location,
+      sessao: await sessaoAtual(cliente),
+      agoraMs: Date.now(),
+      documento: F.gerarConjunto()
+    });
+    if (!plano.ok) { texto('st-copia', mensagemNuvem(plano.motivo)); return; }
+    const r = await F.enviarComCliente(cliente, plano.pedido);
+    texto('st-copia', r.jaExistia
+      ? mensagemNuvem('ja_existe')
+      : r.enviou
+        ? 'Conjunto fictício gravado nesta conta. O aplicativo não foi lido.'
+        : mensagemNuvem(r.motivo));
+  });
+  $('btn-listar').addEventListener('click', async () => {
+    if (!F.paginaPermitida(window.location).ok || !F.planejarEnvio({ location: window.location, sessao: await sessaoAtual(cliente), agoraMs: Date.now() }).ok) {
+      texto('st-copia', mensagemNuvem(F.paginaPermitida(window.location).motivo || 'sessao_ausente'));
+      return;
+    }
+    const lista = await F.listarComCliente(cliente);
+    if (!lista.ok) { texto('st-copia', mensagemNuvem(lista.motivo)); return; }
+    texto('st-copia', lista.itens.length
+      ? 'Há ' + lista.itens.length + ' cópia fictícia nesta conta. O conteúdo não é mostrado aqui.'
+      : 'Nenhuma cópia fictícia nesta conta.');
+  });
+  $('btn-restaurar').addEventListener('click', async () => {
+    const plano = F.planejarEnvio({ location: window.location, sessao: await sessaoAtual(cliente), agoraMs: Date.now() });
+    if (!plano.ok) { texto('st-restauro', mensagemNuvem(plano.motivo)); return; }
+    const r = await F.restaurarComCliente(cliente, localStorage);
+    texto('st-restauro', r.ok
+      ? 'Integridade confere na chave de teste. Ids ' + r.ids.join(', ') + '. O aplicativo não foi alterado.'
+      : mensagemNuvem(r.motivo));
   });
 }
 
