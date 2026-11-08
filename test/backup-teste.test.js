@@ -148,6 +148,98 @@ test('a leitura é da própria linha e a recuperação pede confirmação e guar
   assert.equal(backup.MENSAGEM_RECOLOCADA.includes('canônica'), false);
 });
 
+function servidor() {
+  const estado = { revisao: null, documento: null, chamadas: [] };
+  const cliente = {
+    from() {
+      estado.chamadas.push('leitura');
+      return { select() { return { limit() {
+        if (estado.revisao == null) return Promise.resolve({ data: [], error: null });
+        return Promise.resolve({ data: [{ revisao: estado.revisao, documento: estado.documento }], error: null });
+      } }; } };
+    },
+    rpc(_nome, args) {
+      estado.chamadas.push(args.p_revisao_esperada);
+      if (estado.revisao == null) {
+        if (args.p_revisao_esperada != null) return Promise.resolve({ error: { code: '23514', message: 'revisao_divergente' } });
+        estado.revisao = 1;
+        estado.documento = JSON.parse(JSON.stringify(args.p_documento));
+        return Promise.resolve({ data: 1, error: null });
+      }
+      if (args.p_revisao_esperada !== estado.revisao) {
+        return Promise.resolve({ error: { code: '23514', message: 'revisao_divergente' } });
+      }
+      estado.documento = JSON.parse(JSON.stringify(args.p_documento));
+      estado.revisao += 1;
+      return Promise.resolve({ data: estado.revisao, error: null });
+    }
+  };
+  return { estado, cliente };
+}
+
+test('dois aparelhos guardam a revisão da cópia e o segundo não cobre a edição', async () => {
+  const { estado, cliente } = servidor();
+  const conta = 'conta-a';
+  const sessao = { user: { id: conta } };
+  const doc = modo.documentoFixture();
+  const a = memoria();
+  const b = memoria();
+  a.setItem(modo.CHAVE_APP, JSON.stringify(doc));
+  b.setItem(modo.CHAVE_APP, JSON.stringify(doc));
+  a.setItem(modo.CHAVE_CONTA, conta);
+  b.setItem(modo.CHAVE_CONTA, conta);
+
+  const primeiro = await backup.enviarDaBase(cliente, a, { liberado: true, sessao, documento: doc });
+  assert.equal(primeiro.enviou, true);
+  assert.equal(primeiro.base, 1);
+  assert.equal(backup.lerBase(b, conta), null);
+
+  const semBase = await backup.enviarDaBase(cliente, b, { liberado: true, sessao, documento: doc });
+  assert.equal(semBase.motivo, 'base_ausente');
+  assert.equal(semBase.enviou, false);
+  assert.equal(estado.revisao, 1);
+  assert.equal(backup.lerBase(b, conta), null);
+
+  const previa = backup.recuperar(b, estado.documento, false);
+  assert.equal(previa.escreveu, false);
+  assert.equal(backup.lerBase(b, conta), null);
+
+  const adotado = backup.recuperar(b, estado.documento, true);
+  assert.equal(adotado.ok, true);
+  assert.equal(backup.adotarRevisao(b, conta, 1).ok, true);
+  assert.equal(JSON.parse(b.getItem(modo.CHAVE_COPIA)).entries.length, 2);
+
+  const editado = JSON.parse(a.getItem(modo.CHAVE_APP));
+  editado.entries[0].obs = 'Teste sem internet';
+  a.setItem(modo.CHAVE_APP, JSON.stringify(editado));
+  const atualizou = await backup.enviarDaBase(cliente, a, { liberado: true, sessao, documento: editado });
+  assert.equal(atualizou.base, 2);
+  assert.equal(estado.documento.entries[0].obs, 'Teste sem internet');
+  assert.equal(backup.lerBase(b, conta), 1);
+
+  const leituras = estado.chamadas.filter((item) => item === 'leitura').length;
+  const stale = await backup.enviarDaBase(cliente, b, {
+    liberado: true, sessao, documento: JSON.parse(b.getItem(modo.CHAVE_APP))
+  });
+  assert.equal(stale.motivo, 'revisao_divergente');
+  assert.equal(stale.repetiu, false);
+  assert.equal(estado.revisao, 2);
+  assert.equal(estado.documento.entries[0].obs, 'Teste sem internet');
+  assert.equal(backup.lerBase(b, conta), 1);
+  assert.equal(JSON.parse(b.getItem(modo.CHAVE_APP)).entries[0].obs, 'Peça de teste com acento');
+  assert.equal(estado.chamadas.filter((item) => item === 'leitura').length, leituras);
+
+  const troca = await backup.enviarDaBase(cliente, a, {
+    liberado: true, sessao: { user: { id: 'conta-b' } }, documento: editado
+  });
+  assert.equal(troca.motivo, 'conta_anterior');
+  assert.equal(backup.lerBase(a, conta), 2);
+  assert.equal(backup.lerBase(a, 'conta-b'), null);
+  assert.equal(estado.documento.entries[0].obs, 'Teste sem internet');
+  assert.equal(backup.MENSAGEM_ATUALIZADA.includes('outro aparelho'), false);
+  assert.equal(backup.MENSAGEM_CONFLITO.includes('Nada foi enviado de novo'), true);
+});
+
 test('a página só liga a cópia variável no site isolado e não lê o aplicativo', () => {
   const painel = fs.readFileSync(path.join(__dirname, '..', 'app-teste-painel.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'app-teste.html'), 'utf8');
@@ -155,6 +247,10 @@ test('a página só liga a cópia variável no site isolado e não lê o aplicat
   assert.equal(painel.includes('folhazero_v1'), false);
   assert.equal(painel.includes('.delete('), false);
   assert.equal(painel.includes('B.ABERTO === true && pode'), true);
+  assert.equal(painel.includes('revisaoAtual: lido'), false);
+  assert.equal(painel.includes('outro aparelho'), false);
+  assert.equal(painel.includes('enviarDaBase'), true);
+  assert.equal(html.includes('backup genérico'), false);
   assert.equal(painel.includes('paginaPermitida'), true);
   assert.match(html, /id="btn-backup-variavel" disabled/);
   assert.match(html, /id="btn-backup-previa" disabled/);

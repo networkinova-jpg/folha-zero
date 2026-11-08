@@ -6,7 +6,12 @@
   const PROIBIDA = 'folhazero_v1';
   const LIMITE = 65536;
   const ABERTO = true;
+  const CHAVE_BASE = 'folhazero_teste_base';
   const MENSAGEM_RECOLOCADA = 'Cópia variável recolocada nos lançamentos de teste. A versão anterior ficou na cópia local de segurança.';
+  const MENSAGEM_GRAVADA = 'Lançamentos de teste gravados nesta conta. Este aparelho passou a conhecer essa revisão.';
+  const MENSAGEM_ATUALIZADA = 'Lançamentos de teste enviados com a revisão que este aparelho já conhecia. A nuvem aceitou essa revisão.';
+  const MENSAGEM_CONFLITO = 'A revisão que este aparelho conhece não é mais a da nuvem. Nada foi enviado de novo. Os lançamentos daqui continuam neste aparelho.';
+  const MENSAGEM_SEM_BASE = 'Este aparelho ainda não conhece a revisão desta conta. Nada foi enviado. Abra a prévia e confirme a recuperação antes de enviar daqui.';
 
   function normalizar(doc) {
     const copia = JSON.parse(JSON.stringify(doc));
@@ -43,6 +48,35 @@
   function podeEnviarDaConta(storage, contaAtual) {
     const marcada = storage.getItem('folhazero_teste_conta');
     if (marcada && contaAtual && marcada !== contaAtual) return { ok: false, motivo: 'conta_anterior' };
+    return { ok: true };
+  }
+
+  function mapaBase(storage) {
+    try {
+      const mapa = JSON.parse(storage.getItem(CHAVE_BASE) || '{}');
+      if (!mapa || typeof mapa !== 'object' || Array.isArray(mapa)) return {};
+      return mapa;
+    } catch (_) { return {}; }
+  }
+
+  function lerBase(storage, conta) {
+    const item = mapaBase(storage)[conta];
+    if (!item || !Number.isInteger(item.revisao) || item.revisao < 1) return null;
+    return item.revisao;
+  }
+
+  function gravarBase(storage, conta, revisao) {
+    if (!conta || !Number.isInteger(revisao) || revisao < 1) return { ok: false };
+    const mapa = mapaBase(storage);
+    mapa[conta] = { revisao };
+    storage.setItem(CHAVE_BASE, JSON.stringify(mapa));
+    return { ok: true, revisao };
+  }
+
+  function limparBase(storage, conta) {
+    const mapa = mapaBase(storage);
+    if (conta) delete mapa[conta];
+    storage.setItem(CHAVE_BASE, JSON.stringify(mapa));
     return { ok: true };
   }
 
@@ -96,14 +130,50 @@
   async function enviar(cliente, pedido, liberado) {
     const d = decidir(pedido, liberado);
     if (d.acao === 'bloquear') return { ok: false, enviou: false, motivo: d.motivo, repetiu: false, apagou: false };
-    const { error } = await cliente.rpc('backup_teste_gravar', {
+    const { data, error } = await cliente.rpc('backup_teste_gravar', {
       p_revisao_esperada: d.acao === 'inserir' ? null : pedido.revisao,
       p_documento: pedido.documento
     });
-    if (!error) return { ok: true, enviou: true, substituiu: d.acao === 'atualizar', repetiu: false, apagou: false };
+    if (!error) {
+      return {
+        ok: true, enviou: true, substituiu: d.acao === 'atualizar', repetiu: false, apagou: false,
+        revisao: Number.isInteger(data) ? data : null
+      };
+    }
     const motivo = classificar(error);
     if (motivo === 'ja_existe') return { ok: true, enviou: false, jaExistia: true, motivo, repetiu: false, apagou: false };
     return { ok: false, enviou: false, motivo, repetiu: false, apagou: false };
+  }
+
+  async function enviarDaBase(cliente, storage, opts) {
+    const liberado = opts && opts.liberado;
+    if (liberado !== true) return { ok: false, enviou: false, motivo: 'aguardando_migracao', repetiu: false, apagou: false };
+    const conta = opts.sessao && opts.sessao.user && opts.sessao.user.id;
+    if (!conta) return { ok: false, enviou: false, motivo: 'sessao_ausente', repetiu: false, apagou: false };
+    const dono = podeEnviarDaConta(storage, conta);
+    if (!dono.ok) return { ok: false, enviou: false, motivo: dono.motivo, repetiu: false, apagou: false };
+    const conhecida = lerBase(storage, conta);
+    let revisao = conhecida;
+    if (conhecida == null) {
+      const lido = await lerPropria(cliente);
+      if (!lido.ok) return { ok: false, enviou: false, motivo: lido.motivo, repetiu: false, apagou: false };
+      if (!lido.vazio) return { ok: false, enviou: false, motivo: 'base_ausente', repetiu: false, apagou: false };
+      revisao = null;
+    }
+    const plano = planejarEnvio({
+      liberado: true, sessao: opts.sessao, storage, documento: opts.documento, revisaoAtual: revisao
+    });
+    if (!plano.ok) return { ok: false, enviou: false, motivo: plano.motivo, repetiu: false, apagou: false };
+    const r = await enviar(cliente, plano.pedido, true);
+    if (!r.enviou) return r;
+    const nova = Number.isInteger(r.revisao) ? r.revisao : (revisao == null ? 1 : revisao + 1);
+    gravarBase(storage, conta, nova);
+    r.base = nova;
+    return r;
+  }
+
+  function adotarRevisao(storage, conta, revisao) {
+    return gravarBase(storage, conta, revisao);
   }
 
   function recuperar(storage, documento, confirmar) {
@@ -115,8 +185,10 @@
   }
 
   const api = {
-    TABELA, PROIBIDA, LIMITE, ABERTO, MENSAGEM_RECOLOCADA,
-    normalizar, validar, podeEnviarDaConta, decidir, planejarEnvio, classificar, lerPropria, enviar, recuperar
+    TABELA, PROIBIDA, LIMITE, ABERTO, CHAVE_BASE,
+    MENSAGEM_RECOLOCADA, MENSAGEM_GRAVADA, MENSAGEM_ATUALIZADA, MENSAGEM_CONFLITO, MENSAGEM_SEM_BASE,
+    normalizar, validar, podeEnviarDaConta, lerBase, gravarBase, limparBase, adotarRevisao,
+    decidir, planejarEnvio, classificar, lerPropria, enviar, enviarDaBase, recuperar
   };
   root.FolhaBackupTeste = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

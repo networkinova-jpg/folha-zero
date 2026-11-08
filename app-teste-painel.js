@@ -28,7 +28,8 @@ function mensagem(motivo) {
   if (motivo === 'sem_confirmacao') return 'Nada foi recolocado. A prévia está acima.';
   if (motivo === 'versao') return 'A versão do documento não é a desta tela. Nada foi gravado.';
   if (motivo === 'rollback') return 'A gravação falhou. Os lançamentos de teste anteriores foram mantidos.';
-  if (motivo === 'revisao_divergente') return 'A cópia desta conta já mudou. Nada foi substituído e o envio não foi repetido.';
+  if (motivo === 'revisao_divergente') return B.MENSAGEM_CONFLITO;
+  if (motivo === 'base_ausente') return B.MENSAGEM_SEM_BASE;
   if (motivo === 'conta_anterior') return 'Esta sessão não é a conta destes lançamentos. Nada foi enviado.';
   if (motivo === 'aguardando_migracao') return 'O envio dos lançamentos de teste ainda não está liberado. Nenhum carro saiu deste aparelho.';
   if (motivo === 'leitura_recusada') return 'Não foi possível ler a cópia desta conta. Nada foi gravado neste aparelho.';
@@ -61,8 +62,10 @@ async function pintar() {
   texto('st-teste-sessao', sessao ? 'Sessão ativa nesta conta. Nenhum token é mostrado.' : 'Sem sessão. O login Google continua na tela de acesso.');
   const origem = F.paginaPermitida(window.location);
   texto('st-teste-remoto', origem.ok
-    ? 'Neste site o envio manual grava os lançamentos de teste desta tela. O aplicativo publicado continua fechado.'
+    ? 'Enviar lançamentos de teste grava só a chave de teste. O aplicativo publicado continua sem cópia online.'
     : 'A cópia variável só abre no site isolado. ' + mensagem(origem.motivo));
+  const avisoNuvem = $('s-nuvem-info');
+  if (avisoNuvem) avisoNuvem.textContent = 'O backup do aplicativo publicado continua desligado. Enviar lançamentos de teste, no topo, grava só a chave de teste neste site isolado.';
   const pode = origem.ok && !!sessao;
   ['btn-teste-enviar', 'btn-teste-recuperar'].forEach((id) => { const el = $(id); if (el) el.disabled = !pode; });
   ['btn-backup-variavel', 'btn-backup-previa', 'btn-backup-confirmar'].forEach((id) => {
@@ -96,6 +99,8 @@ async function iniciar() {
   $('btn-confirmar-fixture').addEventListener('click', () => {
     const r = M.aplicarDocumento(localStorage, M.documentoFixture(), true);
     if (!r.ok) { texto('st-teste-previa', mensagem(r.motivo)); return; }
+    const contaMarcada = localStorage.getItem(M.CHAVE_CONTA);
+    if (contaMarcada) B.limparBase(localStorage, contaMarcada);
     try {
       sessionStorage.setItem(AVISO, 'Lançamentos de teste recolocados. A versão anterior ficou na cópia local de segurança.');
     } catch (_) {}
@@ -116,17 +121,19 @@ async function iniciar() {
     const sessao = data && data.session;
     const origemEnvio = F.paginaPermitida(window.location);
     if (!origemEnvio.ok) { texto('st-backup-variavel', mensagem(origemEnvio.motivo)); return; }
-    const lido = await B.lerPropria(supabase);
-    if (!lido.ok) { texto('st-backup-variavel', mensagem(lido.motivo)); return; }
-    const plano = B.planejarEnvio({
+    const antes = localStorage.getItem(M.CHAVE_APP);
+    const copiaAntes = localStorage.getItem(M.CHAVE_COPIA);
+    const r = await B.enviarDaBase(supabase, localStorage, {
       liberado: true,
       sessao,
-      storage: localStorage,
-      documento: await documentoLocal(),
-      revisaoAtual: lido.vazio ? null : lido.revisao
+      documento: await documentoLocal()
     });
-    if (!plano.ok) { texto('st-backup-variavel', mensagem(plano.motivo)); return; }
-    const r = await B.enviar(supabase, plano.pedido, true);
+    if (localStorage.getItem(M.CHAVE_APP) !== antes || localStorage.getItem(M.CHAVE_COPIA) !== copiaAntes) {
+      if (antes == null) localStorage.removeItem(M.CHAVE_APP);
+      else localStorage.setItem(M.CHAVE_APP, antes);
+      if (copiaAntes == null) localStorage.removeItem(M.CHAVE_COPIA);
+      else localStorage.setItem(M.CHAVE_COPIA, copiaAntes);
+    }
     if (!r.enviou) {
       texto('st-backup-variavel', r.motivo === 'ja_existe'
         ? 'Esta conta já tem a cópia variável. Nada foi apagado e o envio não foi repetido.'
@@ -134,9 +141,7 @@ async function iniciar() {
       return;
     }
     localStorage.setItem(M.CHAVE_CONTA, sessao.user.id);
-    texto('st-backup-variavel', r.substituiu
-      ? 'Lançamentos de teste atualizados nesta conta. Nenhum outro aparelho foi apagado.'
-      : 'Lançamentos de teste gravados nesta conta.');
+    texto('st-backup-variavel', r.substituiu ? B.MENSAGEM_ATUALIZADA : B.MENSAGEM_GRAVADA);
   });
   $('btn-backup-previa').addEventListener('click', async () => {
     if (B.ABERTO !== true) {
@@ -152,7 +157,7 @@ async function iniciar() {
       texto('st-backup-variavel', 'Esta conta ainda não tem cópia variável. Nada foi gravado neste aparelho.');
       return;
     }
-    copiaPendente = lido.documento;
+    copiaPendente = { documento: lido.documento, revisao: lido.revisao };
     const info = M.previa(localStorage, lido.documento);
     const extra = info.colisoes.length ? ' Colisão de id: ' + info.colisoes.join(', ') + '.' : '';
     const sozinho = info.somenteLocais && info.somenteLocais.length
@@ -161,13 +166,21 @@ async function iniciar() {
     texto('st-backup-variavel', 'Prévia da cópia variável: ' + info.novos + ' lançamentos. Locais agora: ' + info.locais + '.' + extra + sozinho + ' Nada foi gravado.');
     $('btn-backup-confirmar').disabled = false;
   });
-  $('btn-backup-confirmar').addEventListener('click', () => {
+  $('btn-backup-confirmar').addEventListener('click', async () => {
     if (B.ABERTO !== true || !copiaPendente) {
       texto('st-backup-variavel', mensagem('aguardando_migracao'));
       return;
     }
-    const r = B.recuperar(localStorage, copiaPendente, true);
+    const supabase = cliente();
+    const { data } = supabase ? await supabase.auth.getSession() : { data: null };
+    const sessao = data && data.session;
+    if (!sessao || !sessao.user || !Number.isInteger(copiaPendente.revisao)) {
+      texto('st-backup-variavel', mensagem('sessao_ausente'));
+      return;
+    }
+    const r = B.recuperar(localStorage, copiaPendente.documento, true);
     if (!r.ok) { texto('st-backup-variavel', mensagem(r.motivo)); return; }
+    B.adotarRevisao(localStorage, sessao.user.id, copiaPendente.revisao);
     try { sessionStorage.setItem(AVISO, B.MENSAGEM_RECOLOCADA); } catch (_) {}
     window.location.reload();
   });

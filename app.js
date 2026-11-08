@@ -1014,7 +1014,9 @@ function renderAjustes() {
   $('#s-operador').value = DB.settings.operador || '';
   $('#s-contador-hint').classList.toggle('hidden', !CONTADOR_URL);
   const aviso = $('#s-nuvem-info');
-  if (aviso) aviso.textContent = copiaOnlineLigada()
+  if (aviso) aviso.textContent = MODO_TESTE
+    ? 'O backup do aplicativo publicado continua desligado. Enviar lançamentos de teste, no topo, grava só a chave de teste neste site isolado.'
+    : copiaOnlineLigada()
     ? 'Há uma configuração de cópia online neste aparelho. Ela só conta como concluída depois de conferida. Uma conta vazia não substitui os lançamentos daqui.'
     : 'A cópia online ainda não está ligada. Os lançamentos continuam somente neste aparelho. Uma falha de rede não apaga o que já está salvo.';
   renderAcesso();

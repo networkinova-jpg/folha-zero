@@ -358,7 +358,12 @@ var require_backup_teste = __commonJS({
       const PROIBIDA = "folhazero_v1";
       const LIMITE = 65536;
       const ABERTO = true;
+      const CHAVE_BASE = "folhazero_teste_base";
       const MENSAGEM_RECOLOCADA = "C\xF3pia vari\xE1vel recolocada nos lan\xE7amentos de teste. A vers\xE3o anterior ficou na c\xF3pia local de seguran\xE7a.";
+      const MENSAGEM_GRAVADA = "Lan\xE7amentos de teste gravados nesta conta. Este aparelho passou a conhecer essa revis\xE3o.";
+      const MENSAGEM_ATUALIZADA = "Lan\xE7amentos de teste enviados com a revis\xE3o que este aparelho j\xE1 conhecia. A nuvem aceitou essa revis\xE3o.";
+      const MENSAGEM_CONFLITO = "A revis\xE3o que este aparelho conhece n\xE3o \xE9 mais a da nuvem. Nada foi enviado de novo. Os lan\xE7amentos daqui continuam neste aparelho.";
+      const MENSAGEM_SEM_BASE = "Este aparelho ainda n\xE3o conhece a revis\xE3o desta conta. Nada foi enviado. Abra a pr\xE9via e confirme a recupera\xE7\xE3o antes de enviar daqui.";
       function normalizar(doc) {
         const copia = JSON.parse(JSON.stringify(doc));
         function arrumar(obj) {
@@ -392,6 +397,33 @@ var require_backup_teste = __commonJS({
       function podeEnviarDaConta(storage, contaAtual) {
         const marcada = storage.getItem("folhazero_teste_conta");
         if (marcada && contaAtual && marcada !== contaAtual) return { ok: false, motivo: "conta_anterior" };
+        return { ok: true };
+      }
+      function mapaBase(storage) {
+        try {
+          const mapa = JSON.parse(storage.getItem(CHAVE_BASE) || "{}");
+          if (!mapa || typeof mapa !== "object" || Array.isArray(mapa)) return {};
+          return mapa;
+        } catch (_) {
+          return {};
+        }
+      }
+      function lerBase(storage, conta) {
+        const item = mapaBase(storage)[conta];
+        if (!item || !Number.isInteger(item.revisao) || item.revisao < 1) return null;
+        return item.revisao;
+      }
+      function gravarBase(storage, conta, revisao) {
+        if (!conta || !Number.isInteger(revisao) || revisao < 1) return { ok: false };
+        const mapa = mapaBase(storage);
+        mapa[conta] = { revisao };
+        storage.setItem(CHAVE_BASE, JSON.stringify(mapa));
+        return { ok: true, revisao };
+      }
+      function limparBase(storage, conta) {
+        const mapa = mapaBase(storage);
+        if (conta) delete mapa[conta];
+        storage.setItem(CHAVE_BASE, JSON.stringify(mapa));
         return { ok: true };
       }
       function decidir(pedido, liberado) {
@@ -442,14 +474,56 @@ var require_backup_teste = __commonJS({
       async function enviar(cliente2, pedido, liberado) {
         const d = decidir(pedido, liberado);
         if (d.acao === "bloquear") return { ok: false, enviou: false, motivo: d.motivo, repetiu: false, apagou: false };
-        const { error } = await cliente2.rpc("backup_teste_gravar", {
+        const { data, error } = await cliente2.rpc("backup_teste_gravar", {
           p_revisao_esperada: d.acao === "inserir" ? null : pedido.revisao,
           p_documento: pedido.documento
         });
-        if (!error) return { ok: true, enviou: true, substituiu: d.acao === "atualizar", repetiu: false, apagou: false };
+        if (!error) {
+          return {
+            ok: true,
+            enviou: true,
+            substituiu: d.acao === "atualizar",
+            repetiu: false,
+            apagou: false,
+            revisao: Number.isInteger(data) ? data : null
+          };
+        }
         const motivo = classificar(error);
         if (motivo === "ja_existe") return { ok: true, enviou: false, jaExistia: true, motivo, repetiu: false, apagou: false };
         return { ok: false, enviou: false, motivo, repetiu: false, apagou: false };
+      }
+      async function enviarDaBase(cliente2, storage, opts) {
+        const liberado = opts && opts.liberado;
+        if (liberado !== true) return { ok: false, enviou: false, motivo: "aguardando_migracao", repetiu: false, apagou: false };
+        const conta = opts.sessao && opts.sessao.user && opts.sessao.user.id;
+        if (!conta) return { ok: false, enviou: false, motivo: "sessao_ausente", repetiu: false, apagou: false };
+        const dono = podeEnviarDaConta(storage, conta);
+        if (!dono.ok) return { ok: false, enviou: false, motivo: dono.motivo, repetiu: false, apagou: false };
+        const conhecida = lerBase(storage, conta);
+        let revisao = conhecida;
+        if (conhecida == null) {
+          const lido = await lerPropria(cliente2);
+          if (!lido.ok) return { ok: false, enviou: false, motivo: lido.motivo, repetiu: false, apagou: false };
+          if (!lido.vazio) return { ok: false, enviou: false, motivo: "base_ausente", repetiu: false, apagou: false };
+          revisao = null;
+        }
+        const plano = planejarEnvio({
+          liberado: true,
+          sessao: opts.sessao,
+          storage,
+          documento: opts.documento,
+          revisaoAtual: revisao
+        });
+        if (!plano.ok) return { ok: false, enviou: false, motivo: plano.motivo, repetiu: false, apagou: false };
+        const r = await enviar(cliente2, plano.pedido, true);
+        if (!r.enviou) return r;
+        const nova = Number.isInteger(r.revisao) ? r.revisao : revisao == null ? 1 : revisao + 1;
+        gravarBase(storage, conta, nova);
+        r.base = nova;
+        return r;
+      }
+      function adotarRevisao(storage, conta, revisao) {
+        return gravarBase(storage, conta, revisao);
       }
       function recuperar(storage, documento, confirmar) {
         const modo = root.FolhaModoTeste;
@@ -463,15 +537,25 @@ var require_backup_teste = __commonJS({
         PROIBIDA,
         LIMITE,
         ABERTO,
+        CHAVE_BASE,
         MENSAGEM_RECOLOCADA,
+        MENSAGEM_GRAVADA,
+        MENSAGEM_ATUALIZADA,
+        MENSAGEM_CONFLITO,
+        MENSAGEM_SEM_BASE,
         normalizar,
         validar,
         podeEnviarDaConta,
+        lerBase,
+        gravarBase,
+        limparBase,
+        adotarRevisao,
         decidir,
         planejarEnvio,
         classificar,
         lerPropria,
         enviar,
+        enviarDaBase,
         recuperar
       };
       root.FolhaBackupTeste = api;
@@ -21423,7 +21507,8 @@ function mensagem(motivo) {
   if (motivo === "sem_confirmacao") return "Nada foi recolocado. A pr\xE9via est\xE1 acima.";
   if (motivo === "versao") return "A vers\xE3o do documento n\xE3o \xE9 a desta tela. Nada foi gravado.";
   if (motivo === "rollback") return "A grava\xE7\xE3o falhou. Os lan\xE7amentos de teste anteriores foram mantidos.";
-  if (motivo === "revisao_divergente") return "A c\xF3pia desta conta j\xE1 mudou. Nada foi substitu\xEDdo e o envio n\xE3o foi repetido.";
+  if (motivo === "revisao_divergente") return B.MENSAGEM_CONFLITO;
+  if (motivo === "base_ausente") return B.MENSAGEM_SEM_BASE;
   if (motivo === "conta_anterior") return "Esta sess\xE3o n\xE3o \xE9 a conta destes lan\xE7amentos. Nada foi enviado.";
   if (motivo === "aguardando_migracao") return "O envio dos lan\xE7amentos de teste ainda n\xE3o est\xE1 liberado. Nenhum carro saiu deste aparelho.";
   if (motivo === "leitura_recusada") return "N\xE3o foi poss\xEDvel ler a c\xF3pia desta conta. Nada foi gravado neste aparelho.";
@@ -21458,7 +21543,9 @@ async function pintar() {
   }
   texto("st-teste-sessao", sessao ? "Sess\xE3o ativa nesta conta. Nenhum token \xE9 mostrado." : "Sem sess\xE3o. O login Google continua na tela de acesso.");
   const origem = F.paginaPermitida(window.location);
-  texto("st-teste-remoto", origem.ok ? "Neste site o envio manual grava os lan\xE7amentos de teste desta tela. O aplicativo publicado continua fechado." : "A c\xF3pia vari\xE1vel s\xF3 abre no site isolado. " + mensagem(origem.motivo));
+  texto("st-teste-remoto", origem.ok ? "Enviar lan\xE7amentos de teste grava s\xF3 a chave de teste. O aplicativo publicado continua sem c\xF3pia online." : "A c\xF3pia vari\xE1vel s\xF3 abre no site isolado. " + mensagem(origem.motivo));
+  const avisoNuvem = $("s-nuvem-info");
+  if (avisoNuvem) avisoNuvem.textContent = "O backup do aplicativo publicado continua desligado. Enviar lan\xE7amentos de teste, no topo, grava s\xF3 a chave de teste neste site isolado.";
   const pode = origem.ok && !!sessao;
   ["btn-teste-enviar", "btn-teste-recuperar"].forEach((id) => {
     const el = $(id);
@@ -21496,6 +21583,8 @@ async function iniciar() {
       texto("st-teste-previa", mensagem(r.motivo));
       return;
     }
+    const contaMarcada = localStorage.getItem(M.CHAVE_CONTA);
+    if (contaMarcada) B.limparBase(localStorage, contaMarcada);
     try {
       sessionStorage.setItem(AVISO, "Lan\xE7amentos de teste recolocados. A vers\xE3o anterior ficou na c\xF3pia local de seguran\xE7a.");
     } catch (_) {
@@ -21523,29 +21612,25 @@ async function iniciar() {
       texto("st-backup-variavel", mensagem(origemEnvio.motivo));
       return;
     }
-    const lido = await B.lerPropria(supabase);
-    if (!lido.ok) {
-      texto("st-backup-variavel", mensagem(lido.motivo));
-      return;
-    }
-    const plano = B.planejarEnvio({
+    const antes = localStorage.getItem(M.CHAVE_APP);
+    const copiaAntes = localStorage.getItem(M.CHAVE_COPIA);
+    const r = await B.enviarDaBase(supabase, localStorage, {
       liberado: true,
       sessao,
-      storage: localStorage,
-      documento: await documentoLocal(),
-      revisaoAtual: lido.vazio ? null : lido.revisao
+      documento: await documentoLocal()
     });
-    if (!plano.ok) {
-      texto("st-backup-variavel", mensagem(plano.motivo));
-      return;
+    if (localStorage.getItem(M.CHAVE_APP) !== antes || localStorage.getItem(M.CHAVE_COPIA) !== copiaAntes) {
+      if (antes == null) localStorage.removeItem(M.CHAVE_APP);
+      else localStorage.setItem(M.CHAVE_APP, antes);
+      if (copiaAntes == null) localStorage.removeItem(M.CHAVE_COPIA);
+      else localStorage.setItem(M.CHAVE_COPIA, copiaAntes);
     }
-    const r = await B.enviar(supabase, plano.pedido, true);
     if (!r.enviou) {
       texto("st-backup-variavel", r.motivo === "ja_existe" ? "Esta conta j\xE1 tem a c\xF3pia vari\xE1vel. Nada foi apagado e o envio n\xE3o foi repetido." : mensagem(r.motivo));
       return;
     }
     localStorage.setItem(M.CHAVE_CONTA, sessao.user.id);
-    texto("st-backup-variavel", r.substituiu ? "Lan\xE7amentos de teste atualizados nesta conta. Nenhum outro aparelho foi apagado." : "Lan\xE7amentos de teste gravados nesta conta.");
+    texto("st-backup-variavel", r.substituiu ? B.MENSAGEM_ATUALIZADA : B.MENSAGEM_GRAVADA);
   });
   $("btn-backup-previa").addEventListener("click", async () => {
     if (B.ABERTO !== true) {
@@ -21564,23 +21649,31 @@ async function iniciar() {
       texto("st-backup-variavel", "Esta conta ainda n\xE3o tem c\xF3pia vari\xE1vel. Nada foi gravado neste aparelho.");
       return;
     }
-    copiaPendente = lido.documento;
+    copiaPendente = { documento: lido.documento, revisao: lido.revisao };
     const info = M.previa(localStorage, lido.documento);
     const extra = info.colisoes.length ? " Colis\xE3o de id: " + info.colisoes.join(", ") + "." : "";
     const sozinho = info.somenteLocais && info.somenteLocais.length ? " H\xE1 lan\xE7amento s\xF3 neste aparelho: " + info.somenteLocais.length + "." : "";
     texto("st-backup-variavel", "Pr\xE9via da c\xF3pia vari\xE1vel: " + info.novos + " lan\xE7amentos. Locais agora: " + info.locais + "." + extra + sozinho + " Nada foi gravado.");
     $("btn-backup-confirmar").disabled = false;
   });
-  $("btn-backup-confirmar").addEventListener("click", () => {
+  $("btn-backup-confirmar").addEventListener("click", async () => {
     if (B.ABERTO !== true || !copiaPendente) {
       texto("st-backup-variavel", mensagem("aguardando_migracao"));
       return;
     }
-    const r = B.recuperar(localStorage, copiaPendente, true);
+    const supabase = cliente();
+    const { data } = supabase ? await supabase.auth.getSession() : { data: null };
+    const sessao = data && data.session;
+    if (!sessao || !sessao.user || !Number.isInteger(copiaPendente.revisao)) {
+      texto("st-backup-variavel", mensagem("sessao_ausente"));
+      return;
+    }
+    const r = B.recuperar(localStorage, copiaPendente.documento, true);
     if (!r.ok) {
       texto("st-backup-variavel", mensagem(r.motivo));
       return;
     }
+    B.adotarRevisao(localStorage, sessao.user.id, copiaPendente.revisao);
     try {
       sessionStorage.setItem(AVISO, B.MENSAGEM_RECOLOCADA);
     } catch (_) {
