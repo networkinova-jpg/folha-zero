@@ -5,16 +5,11 @@ const modo = require('../modo-teste.js');
 
 function clienteFalso() {
   const ops = [];
-  function chain(nome) {
-    const api = {
-      insert(row) { ops.push({ op: 'insert', nome, row }); return Promise.resolve({ error: null }); },
-      update(row) { ops.push({ op: 'update', nome, row }); return api; },
-      eq() { return api; },
-      then(resolve) { resolve({ error: null }); }
-    };
-    return api;
-  }
-  return { ops, from(nome) { ops.push({ op: 'from', nome }); return chain(nome); } };
+  return {
+    ops,
+    rpc(nome, args) { ops.push({ op: 'rpc', nome, args }); return Promise.resolve({ error: null }); },
+    from(nome) { ops.push({ op: 'from', nome }); throw new Error('escrita direta'); }
+  };
 }
 
 test('o envio variável fica fechado e não chama a nuvem', async () => {
@@ -43,9 +38,9 @@ test('com a trava aberta só no teste, grava na tabela nova e o conflito não ap
   const pedido = { owner_id: '11111111-1111-4111-8111-111111111111', documento: doc };
   const enviado = await backup.enviar(cliente, pedido, true);
   assert.equal(enviado.enviou, true);
-  assert.equal(cliente.ops.some((op) => op.nome === 'backups_teste_app'), true);
-  assert.equal(cliente.ops.some((op) => op.nome === 'copias_fixture_teste'), false);
-  assert.equal(cliente.ops.some((op) => op.op === 'delete'), false);
+  assert.equal(cliente.ops[0].nome, 'backup_teste_gravar');
+  assert.equal(cliente.ops[0].args.p_revisao_esperada, null);
+  assert.equal(cliente.ops.some((op) => op.op === 'from'), false);
   const storage = {
     getItem(chave) { return chave === 'folhazero_teste_conta' ? 'conta-antiga' : null; }
   };

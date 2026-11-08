@@ -56,17 +56,10 @@
   async function enviar(cliente, pedido, liberado) {
     const d = decidir(pedido, liberado);
     if (d.acao === 'bloquear') return { ok: false, enviou: false, motivo: d.motivo };
-    const tabela = cliente.from(TABELA);
-    let error;
-    if (d.acao === 'inserir') {
-      ({ error } = await tabela.insert({
-        owner_id: pedido.owner_id, revisao: 1, bytes: 1, documento: pedido.documento
-      }));
-    } else {
-      ({ error } = await tabela.update({
-        documento: pedido.documento, revisao: pedido.revisao + 1, bytes: 1
-      }).eq('owner_id', pedido.owner_id).eq('revisao', pedido.revisao));
-    }
+    const { error } = await cliente.rpc('backup_teste_gravar', {
+      p_revisao_esperada: d.acao === 'inserir' ? null : pedido.revisao,
+      p_documento: pedido.documento
+    });
     if (!error) return { ok: true, enviou: true, substituiu: d.acao === 'atualizar' };
     if (String(error.code || '') === '23505') return { ok: true, enviou: false, jaExistia: true, motivo: 'ja_existe' };
     return { ok: false, enviou: false, motivo: 'envio_recusado' };

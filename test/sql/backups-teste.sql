@@ -76,10 +76,49 @@ insert into doc_variavel (documento) values ($fx$
 $fx$::jsonb);
 grant select on doc_variavel to authenticated;
 
+do $$
+declare base jsonb; ruim jsonb; ok boolean;
+begin
+  select documento into base from doc_variavel;
+  if private.backup_teste_documento_valido(base) is distinct from true then
+    raise exception 'documento legitimo recusado';
+  end if;
+  if private.backup_teste_documento_valido(jsonb_set(base, '{entries,1,dataInicio}', '"2024-02-29"'::jsonb)) is distinct from true then
+    raise exception 'bissexto legitimo recusado';
+  end if;
+  foreach ruim in array array[
+    jsonb_set(base, '{entries,0,setor}', 'null'::jsonb),
+    jsonb_set(base, '{entries,0,situacao}', 'null'::jsonb),
+    jsonb_set(base, '{entries,0,id}', '123'::jsonb),
+    jsonb_set(base, '{entries,0,empresa}', 'true'::jsonb),
+    jsonb_set(base, '{entries,0,os}', '10'::jsonb),
+    jsonb_set(base, '{entries,0,veiculo}', '{"a":1}'::jsonb),
+    jsonb_set(base, '{settings,operador}', '7'::jsonb),
+    jsonb_set(base, '{settings,setorOperador}', 'null'::jsonb),
+    jsonb_set(base, '{entries,0,pausas,0,motivo}', '1'::jsonb),
+    jsonb_set(base, '{entries,0,pausas,0,inicio}', '"2026-99-99T12:00"'::jsonb),
+    jsonb_set(base, '{entries,0,pausas,0,fim}', '"2026-11-02T11:00"'::jsonb),
+    jsonb_set(base, '{entries,1,horaTermino}', '"09:00"'::jsonb),
+    jsonb_set(base, '{entries,1,dataInicio}', '"2026-02-29"'::jsonb),
+    jsonb_set(base, '{entries,1,dataInicio}', '"2026-02-31"'::jsonb),
+    jsonb_set(base, '{entries,0,createdAt}', '1.5'::jsonb),
+    jsonb_set(base, '{entries,0,updatedAt}', '1'::jsonb),
+    jsonb_set(base, '{quinzenas}', '{"INOVA Blindagem|2026-99|1":"Aberta"}'::jsonb),
+    jsonb_set(base, '{settings,lastBackup}', '"2026-99-99Tqualquer"'::jsonb),
+    jsonb_set(base, '{settings,trialInicio}', '"qualquer"'::jsonb),
+    jsonb_set(base, '{settings,aliquota}', '{"chave-com-mais-de-oitenta-caracteres-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": 1}'::jsonb)
+  ]
+  loop
+    ok := private.backup_teste_documento_valido(ruim);
+    if ok is distinct from false then
+      raise exception 'payload impossivel foi aceito';
+    end if;
+  end loop;
+end $$;
+
 set role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', false);
-insert into public.backups_teste_app (owner_id, revisao, bytes, documento)
-select '11111111-1111-4111-8111-111111111111', 9, 1, documento from doc_variavel;
+select public.backup_teste_gravar(null, documento) from doc_variavel;
 
 do $$
 declare lido jsonb; rev int;
@@ -98,20 +137,17 @@ end $$;
 
 do $$
 begin
-  insert into public.backups_teste_app (owner_id, revisao, bytes, documento)
-  select '11111111-1111-4111-8111-111111111111', 1, 1, documento from doc_variavel;
+  perform public.backup_teste_gravar(null, (select documento from doc_variavel));
   raise exception 'ataque passou: segunda linha';
-exception when unique_violation then
-  null;
-when others then
+exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
-  raise exception 'segunda linha com erro inesperado: %', sqlerrm;
+  if sqlerrm not like '%revisao_divergente%' then
+    raise exception 'segunda linha com erro inesperado: %', sqlerrm;
+  end if;
 end $$;
 
-update public.backups_teste_app
-set documento = jsonb_set(documento, '{entries,1,obs}', '"Observação editada de novo"'::jsonb),
-    revisao = revisao + 1
-where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 1;
+select public.backup_teste_gravar(1, jsonb_set(documento, '{entries,1,obs}', '"Observação editada de novo"'::jsonb))
+from doc_variavel;
 
 do $$
 declare obs text; rev int;
@@ -122,15 +158,34 @@ begin
 end $$;
 
 do $$
+declare antes text;
 begin
-  update public.backups_teste_app
-  set revisao = 9
-  where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 2;
-  raise exception 'ataque passou: revisao';
-exception when others then
-  if sqlerrm like 'ataque passou:%' then raise; end if;
-  if sqlerrm not like '%revisao_divergente%' then
-    raise exception 'revisao com erro inesperado: %', sqlerrm;
+  select documento->'entries'->1->>'obs' into antes from public.backups_teste_app;
+  begin
+    update public.backups_teste_app
+    set revisao = revisao + 1
+    where owner_id = '11111111-1111-4111-8111-111111111111';
+    raise exception 'ataque passou: update direto';
+  exception when insufficient_privilege then
+    null;
+  when others then
+    if sqlerrm like 'ataque passou:%' then raise; end if;
+    raise exception 'update direto com erro inesperado: %', sqlerrm;
+  end;
+  if (select documento->'entries'->1->>'obs' from public.backups_teste_app) is distinct from antes then
+    raise exception 'update direto alterou o documento';
+  end if;
+  begin
+    perform public.backup_teste_gravar(1, (select documento from doc_variavel));
+    raise exception 'ataque passou: revisao velha';
+  exception when others then
+    if sqlerrm like 'ataque passou:%' then raise; end if;
+    if sqlerrm not like '%revisao_divergente%' then
+      raise exception 'revisao velha com erro inesperado: %', sqlerrm;
+    end if;
+  end;
+  if (select documento->'entries'->1->>'obs' from public.backups_teste_app) is distinct from antes then
+    raise exception 'revisao velha alterou o documento';
   end if;
 end $$;
 
@@ -138,8 +193,7 @@ do $$
 declare ruim jsonb;
 begin
   select documento || '{"marca":"fixture-teste"}'::jsonb into ruim from doc_variavel;
-  update public.backups_teste_app set documento = ruim, revisao = revisao + 1
-  where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 2;
+  perform public.backup_teste_gravar(2, ruim);
   raise exception 'ataque passou: extra';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
@@ -150,8 +204,7 @@ do $$
 declare ruim jsonb;
 begin
   select documento - 'entries' into ruim from doc_variavel;
-  update public.backups_teste_app set documento = ruim, revisao = revisao + 1
-  where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 2;
+  perform public.backup_teste_gravar(2, ruim);
   raise exception 'ataque passou: sem entries';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
@@ -162,8 +215,7 @@ do $$
 declare ruim jsonb;
 begin
   select jsonb_set(documento, '{entries,1,valor}', '"dez"'::jsonb) into ruim from doc_variavel;
-  update public.backups_teste_app set documento = ruim, revisao = revisao + 1
-  where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 2;
+  perform public.backup_teste_gravar(2, ruim);
   raise exception 'ataque passou: valor texto';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
@@ -174,8 +226,7 @@ do $$
 declare ruim jsonb;
 begin
   select jsonb_set(documento, '{entries,0,valor}', '-1'::jsonb) into ruim from doc_variavel;
-  update public.backups_teste_app set documento = ruim, revisao = revisao + 1
-  where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 2;
+  perform public.backup_teste_gravar(2, ruim);
   raise exception 'ataque passou: valor negativo';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
@@ -186,8 +237,7 @@ do $$
 declare ruim jsonb;
 begin
   select jsonb_set(documento, '{entries,1,id}', '"fx-aco-01"'::jsonb) into ruim from doc_variavel;
-  update public.backups_teste_app set documento = ruim, revisao = revisao + 1
-  where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 2;
+  perform public.backup_teste_gravar(2, ruim);
   raise exception 'ataque passou: id duplicado';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
@@ -198,8 +248,7 @@ do $$
 declare ruim jsonb;
 begin
   select jsonb_set(documento, '{entries,1,dataInicio}', '"2026-02-31"'::jsonb) into ruim from doc_variavel;
-  update public.backups_teste_app set documento = ruim, revisao = revisao + 1
-  where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 2;
+  perform public.backup_teste_gravar(2, ruim);
   raise exception 'ataque passou: data';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
@@ -210,8 +259,7 @@ do $$
 declare grande jsonb;
 begin
   select jsonb_set(documento, '{entries,1,obs}', to_jsonb(repeat('x', 70000))) into grande from doc_variavel;
-  update public.backups_teste_app set documento = grande, revisao = revisao + 1
-  where owner_id = '11111111-1111-4111-8111-111111111111' and revisao = 2;
+  perform public.backup_teste_gravar(2, grande);
   raise exception 'ataque passou: grande';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
@@ -230,14 +278,33 @@ begin
   if n <> 0 then raise exception 'outra conta viu o backup: %', n; end if;
 end $$;
 do $$
+declare antes text;
 begin
-  insert into public.backups_teste_app (owner_id, revisao, bytes, documento)
-  select '11111111-1111-4111-8111-111111111111', 1, 1, documento from doc_variavel;
-  raise exception 'ataque passou: spoof';
-exception when others then
-  if sqlerrm like 'ataque passou:%' then raise; end if;
-  if sqlerrm not like '%dono_alterado%' and sqlerrm not like '%row-level security%' then
-    raise exception 'spoof com erro inesperado: %', sqlerrm;
+  select documento->'entries'->1->>'obs' into antes
+  from public.backups_teste_app
+  where owner_id = '11111111-1111-4111-8111-111111111111';
+  begin
+    insert into public.backups_teste_app (owner_id, revisao, bytes, documento)
+    select '11111111-1111-4111-8111-111111111111', 1, 1, documento from doc_variavel;
+    raise exception 'ataque passou: insert direto';
+  exception when insufficient_privilege then
+    null;
+  when others then
+    if sqlerrm like 'ataque passou:%' then raise; end if;
+    raise exception 'insert direto com erro inesperado: %', sqlerrm;
+  end;
+  begin
+    perform private.backup_teste_aplicar(null, documento) from doc_variavel;
+    raise exception 'ataque passou: funcao privada';
+  exception when insufficient_privilege then
+    null;
+  when others then
+    if sqlerrm like 'ataque passou:%' then raise; end if;
+    raise exception 'funcao privada com erro inesperado: %', sqlerrm;
+  end;
+  if (select documento->'entries'->1->>'obs' from public.backups_teste_app
+      where owner_id = '11111111-1111-4111-8111-111111111111') is distinct from antes then
+    raise exception 'spoof alterou a conta original';
   end if;
 end $$;
 reset role;
@@ -268,13 +335,35 @@ set role authenticated;
 select set_config('request.jwt.claim.sub', '', false);
 do $$
 begin
-  insert into public.backups_teste_app (owner_id, revisao, bytes, documento)
-  select '11111111-1111-4111-8111-111111111111', 1, 1, documento from doc_variavel;
+  perform public.backup_teste_gravar(null, (select documento from doc_variavel));
   raise exception 'ataque passou: sessao ausente';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
-  if sqlerrm not like '%sessao_ausente%' and sqlerrm not like '%row-level security%' then
+  if sqlerrm not like '%sessao_ausente%' then
     raise exception 'sessao ausente com erro inesperado: %', sqlerrm;
   end if;
 end $$;
 reset role;
+
+select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', false);
+do $$
+declare antes uuid;
+begin
+  select id into antes from public.backups_teste_app
+  where owner_id = '11111111-1111-4111-8111-111111111111';
+  begin
+    update public.backups_teste_app
+    set id = gen_random_uuid()
+    where owner_id = '11111111-1111-4111-8111-111111111111';
+    raise exception 'ataque passou: id';
+  exception when others then
+    if sqlerrm like 'ataque passou:%' then raise; end if;
+    if sqlerrm not like '%metadado_protegido%' then
+      raise exception 'id com erro inesperado: %', sqlerrm;
+    end if;
+  end;
+  if (select id from public.backups_teste_app
+      where owner_id = '11111111-1111-4111-8111-111111111111') is distinct from antes then
+    raise exception 'id mudou';
+  end if;
+end $$;
