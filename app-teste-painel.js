@@ -65,7 +65,7 @@ async function pintar() {
     ? 'Enviar lançamentos de teste grava só a chave de teste. O aplicativo publicado continua sem cópia online.'
     : 'A cópia variável só abre no site isolado. ' + mensagem(origem.motivo));
   const avisoNuvem = $('s-nuvem-info');
-  if (avisoNuvem) avisoNuvem.textContent = 'O backup do aplicativo publicado continua desligado. Enviar lançamentos de teste, no topo, grava só a chave de teste neste site isolado.';
+  if (avisoNuvem) avisoNuvem.textContent = 'O backup do aplicativo publicado continua desligado. Neste site isolado, a cópia automática envia só a chave de teste depois de uma alteração salva.';
   const pode = origem.ok && !!sessao;
   ['btn-teste-enviar', 'btn-teste-recuperar'].forEach((id) => { const el = $(id); if (el) el.disabled = !pode; });
   ['btn-backup-variavel', 'btn-backup-previa', 'btn-backup-confirmar'].forEach((id) => {
@@ -107,41 +107,70 @@ async function iniciar() {
     window.location.reload();
   });
   let copiaPendente = null;
-  async function documentoLocal() {
+  function documentoLocal() {
     try { return JSON.parse(localStorage.getItem(M.CHAVE_APP)); }
     catch (_) { return null; }
+  }
+  function contaMarcada() { return localStorage.getItem(M.CHAVE_CONTA) || ''; }
+  function mostrarFila() {
+    const conta = contaMarcada();
+    if (!conta) return;
+    texto('st-backup-variavel', B.textoEstado(B.lerFila(localStorage, conta)));
+  }
+  async function enviarAutomatico(modo) {
+    const origemEnvio = F.paginaPermitida(window.location);
+    const supabase = cliente();
+    let sessao = null;
+    if (supabase) {
+      const obtido = await supabase.auth.getSession();
+      sessao = obtido.data && obtido.data.session;
+    }
+    const conta = contaMarcada();
+    if (!conta) return;
+    const antes = localStorage.getItem(M.CHAVE_APP);
+    const copiaAntes = localStorage.getItem(M.CHAVE_COPIA);
+    await B.rodarFila(supabase, localStorage, {
+      conta,
+      sessao,
+      documento: await documentoLocal(),
+      documentoAtual() { return documentoLocal(); },
+      online: typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+      origemOk: origemEnvio.ok,
+      liberado: B.ABERTO === true,
+      manual: modo === true,
+      retomada: modo === 'retomada'
+    });
+    if (localStorage.getItem(M.CHAVE_APP) !== antes) {
+      if (antes == null) localStorage.removeItem(M.CHAVE_APP);
+      else localStorage.setItem(M.CHAVE_APP, antes);
+    }
+    if (localStorage.getItem(M.CHAVE_COPIA) !== copiaAntes) {
+      if (copiaAntes == null) localStorage.removeItem(M.CHAVE_COPIA);
+      else localStorage.setItem(M.CHAVE_COPIA, copiaAntes);
+    }
+    mostrarFila();
+  }
+  let esperaEnvio = 0;
+  window.addEventListener('folha-teste-gravou', () => {
+    const conta = contaMarcada();
+    if (!conta) return;
+    B.anotarMudanca(localStorage, conta);
+    mostrarFila();
+    clearTimeout(esperaEnvio);
+    esperaEnvio = setTimeout(() => { enviarAutomatico(false); }, 800);
+  });
+  window.addEventListener('online', () => { enviarAutomatico('retomada'); });
+  if (contaMarcada()) {
+    B.retomarFila(localStorage, contaMarcada());
+    mostrarFila();
+    enviarAutomatico('retomada');
   }
   $('btn-backup-variavel').addEventListener('click', async () => {
     if (B.ABERTO !== true) {
       texto('st-backup-variavel', mensagem('aguardando_migracao'));
       return;
     }
-    const supabase = cliente();
-    const { data } = await supabase.auth.getSession();
-    const sessao = data && data.session;
-    const origemEnvio = F.paginaPermitida(window.location);
-    if (!origemEnvio.ok) { texto('st-backup-variavel', mensagem(origemEnvio.motivo)); return; }
-    const antes = localStorage.getItem(M.CHAVE_APP);
-    const copiaAntes = localStorage.getItem(M.CHAVE_COPIA);
-    const r = await B.enviarDaBase(supabase, localStorage, {
-      liberado: true,
-      sessao,
-      documento: await documentoLocal()
-    });
-    if (localStorage.getItem(M.CHAVE_APP) !== antes || localStorage.getItem(M.CHAVE_COPIA) !== copiaAntes) {
-      if (antes == null) localStorage.removeItem(M.CHAVE_APP);
-      else localStorage.setItem(M.CHAVE_APP, antes);
-      if (copiaAntes == null) localStorage.removeItem(M.CHAVE_COPIA);
-      else localStorage.setItem(M.CHAVE_COPIA, copiaAntes);
-    }
-    if (!r.enviou) {
-      texto('st-backup-variavel', r.motivo === 'ja_existe'
-        ? 'Esta conta já tem a cópia variável. Nada foi apagado e o envio não foi repetido.'
-        : mensagem(r.motivo));
-      return;
-    }
-    localStorage.setItem(M.CHAVE_CONTA, sessao.user.id);
-    texto('st-backup-variavel', r.substituiu ? B.MENSAGEM_ATUALIZADA : B.MENSAGEM_GRAVADA);
+    await enviarAutomatico(true);
   });
   $('btn-backup-previa').addEventListener('click', async () => {
     if (B.ABERTO !== true) {
@@ -180,7 +209,7 @@ async function iniciar() {
     }
     const r = B.recuperar(localStorage, copiaPendente.documento, true);
     if (!r.ok) { texto('st-backup-variavel', mensagem(r.motivo)); return; }
-    B.adotarRevisao(localStorage, sessao.user.id, copiaPendente.revisao);
+    B.registrarCopiaAceita(localStorage, sessao.user.id, copiaPendente.documento, copiaPendente.revisao);
     try { sessionStorage.setItem(AVISO, B.MENSAGEM_RECOLOCADA); } catch (_) {}
     window.location.reload();
   });

@@ -101,7 +101,13 @@ function migrarNomes(d) {
   Object.keys(vp).forEach(k => { if (RENOMEAR[k]) { if (!(RENOMEAR[k] in vp)) vp[RENOMEAR[k]] = vp[k]; delete vp[k]; mudou = true; } });
   return mudou;
 }
-function save() { DB.entries.forEach(normEntry); localStorage.setItem(KEY, JSON.stringify(DB)); }
+function save() {
+  DB.entries.forEach(normEntry);
+  localStorage.setItem(KEY, JSON.stringify(DB));
+  if (MODO_TESTE) {
+    try { window.dispatchEvent(new CustomEvent('folha-teste-gravou')); } catch (_) {}
+  }
+}
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
 /* ---------- utilidades ---------- */
@@ -1015,7 +1021,7 @@ function renderAjustes() {
   $('#s-contador-hint').classList.toggle('hidden', !CONTADOR_URL);
   const aviso = $('#s-nuvem-info');
   if (aviso) aviso.textContent = MODO_TESTE
-    ? 'O backup do aplicativo publicado continua desligado. Enviar lançamentos de teste, no topo, grava só a chave de teste neste site isolado.'
+    ? 'O backup do aplicativo publicado continua desligado. Neste site isolado, a cópia automática envia só a chave de teste depois de uma alteração salva.'
     : copiaOnlineLigada()
     ? 'Há uma configuração de cópia online neste aparelho. Ela só conta como concluída depois de conferida. Uma conta vazia não substitui os lançamentos daqui.'
     : 'A cópia online ainda não está ligada. Os lançamentos continuam somente neste aparelho. Uma falha de rede não apaga o que já está salvo.';

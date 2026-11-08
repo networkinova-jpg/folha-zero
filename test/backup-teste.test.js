@@ -240,6 +240,222 @@ test('dois aparelhos guardam a revisão da cópia e o segundo não cobre a ediç
   assert.equal(backup.MENSAGEM_CONFLITO.includes('Nada foi enviado de novo'), true);
 });
 
+test('a cópia automática não cobre revisão alheia, não repete conflito e não perde edição', async () => {
+  const estado = { revisao: 1, documento: null, rpcs: 0, leituras: 0 };
+  const doc = modo.documentoFixture();
+  estado.documento = JSON.parse(JSON.stringify(doc));
+  let segurar = null;
+  let soltar = null;
+  const cliente = {
+    from() {
+      estado.leituras += 1;
+      return { select() { return { limit() {
+        return Promise.resolve(estado.revisao == null
+          ? { data: [], error: null }
+          : { data: [{ revisao: estado.revisao, documento: estado.documento }], error: null });
+      } }; } };
+    },
+    rpc(_nome, args) {
+      estado.rpcs += 1;
+      const esperado = args.p_revisao_esperada;
+      if (segurar && estado.rpcs === 1) {
+        return segurar.then(() => aplicar(esperado, args.p_documento));
+      }
+      return aplicar(esperado, args.p_documento);
+    }
+  };
+  function aplicar(esperado, documento) {
+    if (estado.revisao == null) {
+      if (esperado != null) return Promise.resolve({ error: { code: '23514', message: 'revisao_divergente' } });
+      estado.revisao = 1;
+    } else if (esperado !== estado.revisao) {
+      return Promise.resolve({ error: { code: '23514', message: 'revisao_divergente' } });
+    } else {
+      estado.revisao += 1;
+    }
+    estado.documento = JSON.parse(JSON.stringify(documento));
+    return Promise.resolve({ data: estado.revisao, error: null });
+  }
+  const conta = 'conta-a';
+  const sessao = { user: { id: conta } };
+  const a = memoria();
+  const b = memoria();
+  const baseDoc = JSON.stringify(doc);
+  a.setItem(modo.CHAVE_APP, baseDoc);
+  b.setItem(modo.CHAVE_APP, baseDoc);
+  a.setItem(modo.CHAVE_CONTA, conta);
+  b.setItem(modo.CHAVE_CONTA, conta);
+  backup.gravarBase(a, conta, 1);
+  backup.gravarBase(b, conta, 1);
+  function pedido(storage, extra) {
+    return Object.assign({
+      conta, sessao, online: true, origemOk: true, liberado: true, agora: 100000,
+      documento: JSON.parse(storage.getItem(modo.CHAVE_APP)),
+      documentoAtual() { return JSON.parse(storage.getItem(modo.CHAVE_APP)); }
+    }, extra);
+  }
+
+  const editadoA = JSON.parse(baseDoc);
+  editadoA.entries[0].obs = 'Teste sem internet 2';
+  a.setItem(modo.CHAVE_APP, JSON.stringify(editadoA));
+  backup.anotarMudanca(a, conta);
+  const subiu = await backup.rodarFila(cliente, a, pedido(a));
+  assert.equal(subiu.enviou, true);
+  assert.equal(estado.revisao, 2);
+  assert.equal(estado.documento.entries[0].obs, 'Teste sem internet 2');
+  assert.equal(a.getItem(modo.CHAVE_APP), JSON.stringify(editadoA));
+
+  backup.anotarMudanca(b, conta);
+  const conflito = await backup.rodarFila(cliente, b, pedido(b));
+  assert.equal(conflito.motivo, 'revisao_divergente');
+  assert.equal(estado.documento.entries[0].obs, 'Teste sem internet 2');
+  const rpcs = estado.rpcs;
+  const localB = b.getItem(modo.CHAVE_APP);
+  backup.anotarMudanca(b, conta);
+  const deNovo = await backup.rodarFila(cliente, b, pedido(b, { agora: 200000 }));
+  assert.equal(deNovo.motivo, 'revisao_divergente');
+  assert.equal(estado.rpcs, rpcs);
+  assert.equal(b.getItem(modo.CHAVE_APP), localB);
+  assert.equal(backup.lerBase(b, conta), 1);
+
+  const sem = memoria();
+  sem.setItem(modo.CHAVE_CONTA, conta);
+  sem.setItem(modo.CHAVE_APP, baseDoc);
+  backup.anotarMudanca(sem, conta);
+  const leituras = estado.leituras;
+  const bloqueado = await backup.rodarFila(cliente, sem, pedido(sem));
+  assert.equal(bloqueado.motivo, 'base_ausente');
+  assert.equal(estado.leituras, leituras + 1);
+  backup.anotarMudanca(sem, conta);
+  const parado = await backup.rodarFila(cliente, sem, pedido(sem, { agora: 300000 }));
+  assert.equal(parado.motivo, 'base_ausente');
+  assert.equal(estado.leituras, leituras + 1);
+  assert.equal(estado.documento.entries[0].obs, 'Teste sem internet 2');
+
+  const igual = await backup.rodarFila(cliente, a, pedido(a, { manual: true }));
+  assert.equal(igual.motivo, 'igual');
+  assert.equal(estado.revisao, 2);
+
+  segurar = new Promise((resolve) => { soltar = resolve; });
+  const durante = JSON.parse(a.getItem(modo.CHAVE_APP));
+  durante.entries[0].obs = 'em voo';
+  a.setItem(modo.CHAVE_APP, JSON.stringify(durante));
+  backup.anotarMudanca(a, conta);
+  estado.rpcs = 0;
+  const voo = backup.rodarFila(cliente, a, pedido(a));
+  const depois = JSON.parse(a.getItem(modo.CHAVE_APP));
+  depois.entries[0].obs = 'depois do voo';
+  a.setItem(modo.CHAVE_APP, JSON.stringify(depois));
+  backup.anotarMudanca(a, conta);
+  soltar();
+  const terminou = await voo;
+  assert.equal(terminou.enviou, true);
+  assert.equal(estado.documento.entries[0].obs, 'depois do voo');
+  assert.equal(JSON.parse(a.getItem(modo.CHAVE_APP)).entries[0].obs, 'depois do voo');
+  assert.equal(estado.revisao, 4);
+
+  const offline = backup.anotarMudanca(a, conta);
+  assert.equal(offline.fila.estado === 'pendente' || offline.fila.estado === 'enviado', true);
+  const antesOff = estado.rpcs;
+  const semRede = await backup.rodarFila(cliente, a, pedido(a, { online: false }));
+  assert.equal(semRede.motivo, 'offline');
+  assert.equal(estado.rpcs, antesOff);
+
+  const outra = await backup.rodarFila(cliente, a, pedido(a, { sessao: { user: { id: 'conta-b' } }, manual: true }));
+  assert.equal(outra.motivo, 'conta_anterior');
+  assert.equal(backup.lerBase(a, 'conta-b'), null);
+
+  const antesRestauracao = estado.rpcs;
+  b.setItem(modo.CHAVE_APP, JSON.stringify(estado.documento));
+  backup.registrarCopiaAceita(b, conta, estado.documento, estado.revisao);
+  const restaurado = await backup.rodarFila(cliente, b, pedido(b, { manual: true }));
+  assert.equal(restaurado.motivo, 'igual');
+  assert.equal(estado.rpcs, antesRestauracao);
+  assert.equal(estado.documento.entries[0].obs, 'depois do voo');
+});
+
+test('resposta perdida não reenvia no escuro e a recarga trata o envio interrompido', async () => {
+  const doc = modo.documentoFixture();
+  const estado = { revisao: 1, documento: JSON.parse(JSON.stringify(doc)), rpcs: 0, leituras: 0, modo: 'perder' };
+  const cliente = {
+    from() {
+      estado.leituras += 1;
+      return { select() { return { limit() {
+        return Promise.resolve({ data: [{ revisao: estado.revisao, documento: estado.documento }], error: null });
+      } }; } };
+    },
+    rpc(_nome, args) {
+      estado.rpcs += 1;
+      if (estado.modo === 'perder') throw new Error('sem resposta');
+      if (args.p_revisao_esperada !== estado.revisao) {
+        return Promise.resolve({ error: { code: '23514', message: 'revisao_divergente' } });
+      }
+      estado.revisao += 1;
+      estado.documento = JSON.parse(JSON.stringify(args.p_documento));
+      if (estado.modo === 'perder-depois') throw new Error('sem resposta');
+      return Promise.resolve({ data: estado.revisao, error: null });
+    }
+  };
+  const conta = 'conta-a';
+  const storage = memoria();
+  const novo = JSON.parse(JSON.stringify(doc));
+  novo.entries[0].obs = 'foi';
+  storage.setItem(modo.CHAVE_APP, JSON.stringify(novo));
+  storage.setItem(modo.CHAVE_CONTA, conta);
+  backup.gravarBase(storage, conta, 1);
+  backup.anotarMudanca(storage, conta);
+  const pedido = {
+    conta, sessao: { user: { id: conta } }, online: true, origemOk: true, liberado: true, agora: 100000,
+    documento: novo,
+    documentoAtual() { return JSON.parse(storage.getItem(modo.CHAVE_APP)); }
+  };
+  const perdido = await backup.rodarFila(cliente, storage, pedido);
+  assert.equal(perdido.motivo, 'resposta_ausente');
+  assert.equal(backup.lerFila(storage, conta).estado, 'ambiguo');
+  assert.equal(estado.revisao, 1);
+  const cego = await backup.rodarFila(cliente, storage, Object.assign({}, pedido, { agora: 100500 }));
+  assert.equal(cego.motivo, 'resposta_ausente');
+  assert.equal(estado.rpcs, 1);
+  backup.retomarFila(storage, conta);
+  estado.modo = 'normal';
+  const conferencia = await backup.rodarFila(cliente, storage, Object.assign({}, pedido, { retomada: true, agora: 200000 }));
+  assert.equal(conferencia.enviou, true);
+  assert.equal(estado.revisao, 2);
+  assert.equal(estado.documento.entries[0].obs, 'foi');
+  const outro = memoria();
+  const confirmado = JSON.parse(JSON.stringify(doc));
+  confirmado.entries[0].obs = 'gravou';
+  outro.setItem(modo.CHAVE_APP, JSON.stringify(confirmado));
+  outro.setItem(modo.CHAVE_CONTA, conta);
+  backup.gravarBase(outro, conta, 1);
+  backup.anotarMudanca(outro, conta);
+  estado.modo = 'perder-depois';
+  estado.revisao = 1;
+  estado.documento = JSON.parse(JSON.stringify(doc));
+  const sumiu = await backup.rodarFila(cliente, outro, Object.assign({}, pedido, {
+    documento: confirmado,
+    documentoAtual() { return JSON.parse(outro.getItem(modo.CHAVE_APP)); }
+  }));
+  assert.equal(sumiu.motivo, 'resposta_ausente');
+  assert.equal(estado.revisao, 2);
+  const rpcs = estado.rpcs;
+  const semCego = await backup.rodarFila(cliente, outro, Object.assign({}, pedido, {
+    documento: confirmado, agora: 300000,
+    documentoAtual() { return JSON.parse(outro.getItem(modo.CHAVE_APP)); }
+  }));
+  assert.equal(semCego.motivo, 'resposta_ausente');
+  assert.equal(estado.rpcs, rpcs);
+  const achou = await backup.rodarFila(cliente, outro, Object.assign({}, pedido, {
+    retomada: true, agora: 400000, documento: confirmado,
+    documentoAtual() { return JSON.parse(outro.getItem(modo.CHAVE_APP)); }
+  }));
+  assert.equal(achou.enviou, false);
+  assert.equal(estado.revisao, 2);
+  assert.equal(estado.documento.entries[0].obs, 'gravou');
+  assert.equal(backup.lerBase(outro, conta), 2);
+  assert.equal(backup.lerFila(outro, conta).estado, 'enviado');
+});
+
 test('a página só liga a cópia variável no site isolado e não lê o aplicativo', () => {
   const painel = fs.readFileSync(path.join(__dirname, '..', 'app-teste-painel.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', 'app-teste.html'), 'utf8');
@@ -249,7 +465,12 @@ test('a página só liga a cópia variável no site isolado e não lê o aplicat
   assert.equal(painel.includes('B.ABERTO === true && pode'), true);
   assert.equal(painel.includes('revisaoAtual: lido'), false);
   assert.equal(painel.includes('outro aparelho'), false);
-  assert.equal(painel.includes('enviarDaBase'), true);
+  assert.equal(painel.includes('rodarFila'), true);
+  assert.equal(painel.includes('anotarMudanca'), true);
+  assert.equal(painel.includes('revisaoAtual: lido'), false);
+  const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  assert.equal(app.includes("if (MODO_TESTE)") && app.includes('folha-teste-gravou'), true);
+  assert.equal(fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8').includes('FOLHA_ZERO_MODO_TESTE'), false);
   assert.equal(html.includes('backup genérico'), false);
   assert.equal(painel.includes('paginaPermitida'), true);
   assert.match(html, /id="btn-backup-variavel" disabled/);

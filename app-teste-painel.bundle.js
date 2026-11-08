@@ -359,11 +359,18 @@ var require_backup_teste = __commonJS({
       const LIMITE = 65536;
       const ABERTO = true;
       const CHAVE_BASE = "folhazero_teste_base";
+      const CHAVE_FILA = "folhazero_teste_fila";
+      const INTERVALO_MS = 2e4;
+      const MAX_SEGUIMENTO = 3;
       const MENSAGEM_RECOLOCADA = "C\xF3pia vari\xE1vel recolocada nos lan\xE7amentos de teste. A vers\xE3o anterior ficou na c\xF3pia local de seguran\xE7a.";
       const MENSAGEM_GRAVADA = "Lan\xE7amentos de teste gravados nesta conta. Este aparelho passou a conhecer essa revis\xE3o.";
       const MENSAGEM_ATUALIZADA = "Lan\xE7amentos de teste enviados com a revis\xE3o que este aparelho j\xE1 conhecia. A nuvem aceitou essa revis\xE3o.";
       const MENSAGEM_CONFLITO = "A revis\xE3o que este aparelho conhece n\xE3o \xE9 mais a da nuvem. Nada foi enviado de novo. Os lan\xE7amentos daqui continuam neste aparelho.";
       const MENSAGEM_SEM_BASE = "Este aparelho ainda n\xE3o conhece a revis\xE3o desta conta. Nada foi enviado. Abra a pr\xE9via e confirme a recupera\xE7\xE3o antes de enviar daqui.";
+      const MENSAGEM_AMBIGUO = "Salvo neste aparelho. O envio ficou sem resposta. A c\xF3pia autom\xE1tica n\xE3o manda de novo no escuro.";
+      const MENSAGEM_PENDENTE = "Salvo neste aparelho. Envio da c\xF3pia de teste pendente.";
+      const MENSAGEM_ENVIANDO = "Salvo neste aparelho. Enviando a c\xF3pia de teste.";
+      const MENSAGEM_ENVIADO = "Salvo neste aparelho e enviado com a revis\xE3o que este aparelho j\xE1 conhecia.";
       function normalizar(doc) {
         const copia = JSON.parse(JSON.stringify(doc));
         function arrumar(obj) {
@@ -525,6 +532,259 @@ var require_backup_teste = __commonJS({
       function adotarRevisao(storage, conta, revisao) {
         return gravarBase(storage, conta, revisao);
       }
+      function estavel(valor) {
+        if (Array.isArray(valor)) return "[" + valor.map(estavel).join(",") + "]";
+        if (valor && typeof valor === "object") {
+          return "{" + Object.keys(valor).sort().map((chave) => JSON.stringify(chave) + ":" + estavel(valor[chave])).join(",") + "}";
+        }
+        return JSON.stringify(valor);
+      }
+      function impressao(doc) {
+        if (!doc) return "";
+        return estavel(normalizar(doc));
+      }
+      function mapaFila(storage) {
+        try {
+          const mapa = JSON.parse(storage.getItem(CHAVE_FILA) || "{}");
+          if (!mapa || typeof mapa !== "object" || Array.isArray(mapa)) return {};
+          return mapa;
+        } catch (_) {
+          return {};
+        }
+      }
+      function filaVazia() {
+        return {
+          estado: "salvo",
+          geracao: 0,
+          geracaoEnvio: 0,
+          revisaoEnvio: null,
+          canonEnvio: null,
+          canonAceito: null,
+          motivo: null,
+          ultimaTentativa: 0
+        };
+      }
+      function lerFila(storage, conta) {
+        const item = mapaFila(storage)[conta];
+        if (!item || typeof item !== "object") return filaVazia();
+        return Object.assign(filaVazia(), item);
+      }
+      function gravarFila(storage, conta, fila) {
+        if (!conta) return { ok: false };
+        const mapa = mapaFila(storage);
+        mapa[conta] = fila;
+        storage.setItem(CHAVE_FILA, JSON.stringify(mapa));
+        return { ok: true };
+      }
+      function anotarMudanca(storage, conta) {
+        if (!conta) return { ok: false, motivo: "sessao_ausente" };
+        const fila = lerFila(storage, conta);
+        fila.geracao += 1;
+        if (fila.estado !== "conflito" && fila.estado !== "ambiguo" && fila.estado !== "bloqueado" && fila.estado !== "enviando") {
+          fila.estado = "pendente";
+          fila.motivo = null;
+        }
+        gravarFila(storage, conta, fila);
+        return { ok: true, fila };
+      }
+      function retomarFila(storage, conta) {
+        const fila = lerFila(storage, conta);
+        if (fila.estado === "enviando") {
+          fila.estado = "ambiguo";
+          fila.motivo = "resposta_ausente";
+          gravarFila(storage, conta, fila);
+        }
+        return fila;
+      }
+      function registrarCopiaAceita(storage, conta, documento, revisao) {
+        const base = gravarBase(storage, conta, revisao);
+        if (!base.ok) return base;
+        const fila = lerFila(storage, conta);
+        fila.estado = "enviado";
+        fila.canonAceito = impressao(documento);
+        fila.canonEnvio = null;
+        fila.revisaoEnvio = null;
+        fila.geracaoEnvio = fila.geracao;
+        fila.motivo = null;
+        gravarFila(storage, conta, fila);
+        return { ok: true, revisao, fila };
+      }
+      function textoEstado(fila) {
+        const estado = fila && fila.estado;
+        if (estado === "pendente") return MENSAGEM_PENDENTE;
+        if (estado === "enviando") return MENSAGEM_ENVIANDO;
+        if (estado === "enviado") return MENSAGEM_ENVIADO;
+        if (estado === "conflito") return MENSAGEM_CONFLITO;
+        if (estado === "bloqueado") return MENSAGEM_SEM_BASE;
+        if (estado === "ambiguo") return MENSAGEM_AMBIGUO;
+        if (estado === "erro") return "Salvo neste aparelho. O envio autom\xE1tico n\xE3o concluiu. Os lan\xE7amentos continuam aqui.";
+        return "Salvo neste aparelho. A c\xF3pia autom\xE1tica s\xF3 roda neste site isolado, depois de uma altera\xE7\xE3o, com sess\xE3o. Nada \xE9 restaurado sozinho.";
+      }
+      async function reconciliar(cliente2, storage, conta, documento, agora) {
+        const fila = lerFila(storage, conta);
+        const lido = await lerPropria(cliente2);
+        fila.ultimaTentativa = agora || Date.now();
+        if (!lido.ok) {
+          fila.estado = "ambiguo";
+          fila.motivo = lido.motivo;
+          gravarFila(storage, conta, fila);
+          return { seguiu: false, motivo: lido.motivo };
+        }
+        const base = lerBase(storage, conta);
+        if (lido.vazio) {
+          if (fila.revisaoEnvio == null) {
+            fila.estado = "pendente";
+            fila.motivo = null;
+            gravarFila(storage, conta, fila);
+            return { seguiu: true };
+          }
+          fila.estado = "conflito";
+          fila.motivo = "revisao_divergente";
+          gravarFila(storage, conta, fila);
+          return { seguiu: false, motivo: "revisao_divergente" };
+        }
+        if (fila.canonEnvio && impressao(lido.documento) === fila.canonEnvio) {
+          gravarBase(storage, conta, lido.revisao);
+          fila.canonAceito = fila.canonEnvio;
+          fila.canonEnvio = null;
+          fila.revisaoEnvio = null;
+          fila.estado = impressao(documento) === fila.canonAceito ? "enviado" : "pendente";
+          fila.motivo = null;
+          if (fila.estado === "enviado") fila.geracaoEnvio = fila.geracao;
+          gravarFila(storage, conta, fila);
+          return { seguiu: fila.estado === "pendente", revisao: lido.revisao };
+        }
+        if (base != null && lido.revisao === base && fila.revisaoEnvio === base) {
+          fila.estado = "pendente";
+          fila.motivo = null;
+          gravarFila(storage, conta, fila);
+          return { seguiu: true };
+        }
+        fila.estado = "conflito";
+        fila.motivo = "revisao_divergente";
+        gravarFila(storage, conta, fila);
+        return { seguiu: false, motivo: "revisao_divergente" };
+      }
+      async function rodarFila(cliente2, storage, opts) {
+        const conta = opts && opts.conta;
+        const agora = opts && opts.agora || Date.now();
+        if (!conta) return { ok: false, enviou: false, motivo: "sessao_ausente", repetiu: false };
+        if (opts.origemOk !== true || opts.liberado !== true) {
+          return { ok: false, enviou: false, motivo: "origem_nao_autorizada", repetiu: false };
+        }
+        if (opts.online === false) return { ok: false, enviou: false, motivo: "offline", repetiu: false };
+        const dono = podeEnviarDaConta(storage, conta);
+        if (!dono.ok) return { ok: false, enviou: false, motivo: dono.motivo, repetiu: false };
+        if (!opts.sessao || !opts.sessao.user) {
+          return { ok: false, enviou: false, motivo: "sessao_ausente", repetiu: false };
+        }
+        if (opts.sessao.user.id !== conta) {
+          return { ok: false, enviou: false, motivo: "conta_anterior", repetiu: false };
+        }
+        let fila = lerFila(storage, conta);
+        if (fila.estado === "enviando") return { ok: false, enviou: false, motivo: "enviando", repetiu: false };
+        if (fila.estado === "conflito" || fila.estado === "bloqueado") {
+          return {
+            ok: false,
+            enviou: false,
+            repetiu: false,
+            motivo: fila.estado === "bloqueado" ? "base_ausente" : "revisao_divergente"
+          };
+        }
+        if (fila.estado === "ambiguo" && !opts.manual && !opts.retomada) {
+          return { ok: false, enviou: false, motivo: "resposta_ausente", repetiu: false };
+        }
+        if (!opts.manual && fila.estado === "ambiguo" && fila.motivo === "leitura_recusada" && fila.ultimaTentativa && agora - fila.ultimaTentativa < INTERVALO_MS) {
+          return { ok: false, enviou: false, motivo: "aguardando", repetiu: false };
+        }
+        if (!opts.manual && fila.estado !== "pendente" && fila.estado !== "ambiguo") {
+          return { ok: true, enviou: false, motivo: "ocioso", repetiu: false };
+        }
+        if (!opts.manual && fila.estado === "pendente" && fila.ultimaTentativa && agora - fila.ultimaTentativa < INTERVALO_MS && fila.geracao === fila.geracaoEnvio) {
+          return { ok: false, enviou: false, motivo: "aguardando", repetiu: false };
+        }
+        if (fila.estado === "ambiguo") {
+          const conferencia = await reconciliar(cliente2, storage, conta, opts.documento, agora);
+          if (!conferencia.seguiu) return { ok: false, enviou: false, motivo: conferencia.motivo || "resposta_ausente", repetiu: false };
+          fila = lerFila(storage, conta);
+        }
+        let enviados = 0;
+        let ultimo = { ok: true, enviou: false, motivo: "ocioso", repetiu: false };
+        while (enviados < MAX_SEGUIMENTO) {
+          fila = lerFila(storage, conta);
+          const documento = opts.documentoAtual ? opts.documentoAtual() : opts.documento;
+          if (fila.canonAceito && impressao(documento) === fila.canonAceito) {
+            fila.estado = "enviado";
+            fila.geracaoEnvio = fila.geracao;
+            fila.motivo = null;
+            gravarFila(storage, conta, fila);
+            return { ok: true, enviou: false, motivo: "igual", repetiu: false, enviados };
+          }
+          const conhecida = lerBase(storage, conta);
+          fila.estado = "enviando";
+          fila.geracaoEnvio = fila.geracao;
+          fila.revisaoEnvio = conhecida;
+          fila.canonEnvio = impressao(documento);
+          fila.ultimaTentativa = agora;
+          gravarFila(storage, conta, fila);
+          let resposta;
+          try {
+            resposta = await enviarDaBase(cliente2, storage, {
+              liberado: true,
+              sessao: opts.sessao,
+              storage,
+              documento
+            });
+          } catch (_) {
+            const atual = lerFila(storage, conta);
+            atual.estado = "ambiguo";
+            atual.motivo = "resposta_ausente";
+            gravarFila(storage, conta, atual);
+            return { ok: false, enviou: false, motivo: "resposta_ausente", repetiu: false, enviados };
+          }
+          if (resposta.motivo === "base_ausente") {
+            const atual = lerFila(storage, conta);
+            atual.estado = "bloqueado";
+            atual.motivo = "base_ausente";
+            gravarFila(storage, conta, atual);
+            return Object.assign({ repetiu: false, enviados }, resposta);
+          }
+          if (resposta.motivo === "revisao_divergente" || resposta.motivo === "ja_existe" || resposta.motivo === "carga_invalida" || resposta.motivo === "carga_grande" || resposta.motivo === "quota_revisao") {
+            const atual = lerFila(storage, conta);
+            atual.estado = resposta.motivo === "revisao_divergente" || resposta.motivo === "ja_existe" ? "conflito" : "erro";
+            atual.motivo = resposta.motivo;
+            gravarFila(storage, conta, atual);
+            return Object.assign({ repetiu: false, enviados }, resposta);
+          }
+          if (!resposta.enviou) {
+            const atual = lerFila(storage, conta);
+            if (resposta.motivo === "sessao_ausente" || resposta.motivo === "conta_anterior") {
+              atual.estado = "pendente";
+            } else {
+              atual.estado = "ambiguo";
+              atual.motivo = resposta.motivo || "resposta_ausente";
+            }
+            gravarFila(storage, conta, atual);
+            return Object.assign({ repetiu: false, enviados }, resposta);
+          }
+          const aceito = lerFila(storage, conta);
+          aceito.canonAceito = aceito.canonEnvio;
+          aceito.canonEnvio = null;
+          aceito.revisaoEnvio = null;
+          aceito.estado = "enviado";
+          aceito.motivo = null;
+          gravarFila(storage, conta, aceito);
+          enviados += 1;
+          ultimo = Object.assign({ repetiu: false, enviados }, resposta);
+          const seguinte = opts.documentoAtual ? opts.documentoAtual() : documento;
+          if (!impressao(seguinte) || impressao(seguinte) === aceito.canonAceito) return ultimo;
+          const marcada = lerFila(storage, conta);
+          marcada.estado = "pendente";
+          gravarFila(storage, conta, marcada);
+          opts = Object.assign({}, opts, { documento: seguinte });
+        }
+        return ultimo;
+      }
       function recuperar(storage, documento, confirmar) {
         const modo = root.FolhaModoTeste;
         if (!modo) return { ok: false, escreveu: false, motivo: "modo_ausente" };
@@ -538,11 +798,17 @@ var require_backup_teste = __commonJS({
         LIMITE,
         ABERTO,
         CHAVE_BASE,
+        CHAVE_FILA,
+        INTERVALO_MS,
         MENSAGEM_RECOLOCADA,
         MENSAGEM_GRAVADA,
         MENSAGEM_ATUALIZADA,
         MENSAGEM_CONFLITO,
         MENSAGEM_SEM_BASE,
+        MENSAGEM_AMBIGUO,
+        MENSAGEM_PENDENTE,
+        MENSAGEM_ENVIANDO,
+        MENSAGEM_ENVIADO,
         normalizar,
         validar,
         podeEnviarDaConta,
@@ -550,12 +816,19 @@ var require_backup_teste = __commonJS({
         gravarBase,
         limparBase,
         adotarRevisao,
+        impressao,
+        anotarMudanca,
+        retomarFila,
+        lerFila,
+        registrarCopiaAceita,
+        textoEstado,
         decidir,
         planejarEnvio,
         classificar,
         lerPropria,
         enviar,
         enviarDaBase,
+        rodarFila,
         recuperar
       };
       root.FolhaBackupTeste = api;
@@ -21545,7 +21818,7 @@ async function pintar() {
   const origem = F.paginaPermitida(window.location);
   texto("st-teste-remoto", origem.ok ? "Enviar lan\xE7amentos de teste grava s\xF3 a chave de teste. O aplicativo publicado continua sem c\xF3pia online." : "A c\xF3pia vari\xE1vel s\xF3 abre no site isolado. " + mensagem(origem.motivo));
   const avisoNuvem = $("s-nuvem-info");
-  if (avisoNuvem) avisoNuvem.textContent = "O backup do aplicativo publicado continua desligado. Enviar lan\xE7amentos de teste, no topo, grava s\xF3 a chave de teste neste site isolado.";
+  if (avisoNuvem) avisoNuvem.textContent = "O backup do aplicativo publicado continua desligado. Neste site isolado, a c\xF3pia autom\xE1tica envia s\xF3 a chave de teste depois de uma altera\xE7\xE3o salva.";
   const pode = origem.ok && !!sessao;
   ["btn-teste-enviar", "btn-teste-recuperar"].forEach((id) => {
     const el = $(id);
@@ -21583,8 +21856,8 @@ async function iniciar() {
       texto("st-teste-previa", mensagem(r.motivo));
       return;
     }
-    const contaMarcada = localStorage.getItem(M.CHAVE_CONTA);
-    if (contaMarcada) B.limparBase(localStorage, contaMarcada);
+    const contaMarcada2 = localStorage.getItem(M.CHAVE_CONTA);
+    if (contaMarcada2) B.limparBase(localStorage, contaMarcada2);
     try {
       sessionStorage.setItem(AVISO, "Lan\xE7amentos de teste recolocados. A vers\xE3o anterior ficou na c\xF3pia local de seguran\xE7a.");
     } catch (_) {
@@ -21592,45 +21865,81 @@ async function iniciar() {
     window.location.reload();
   });
   let copiaPendente = null;
-  async function documentoLocal() {
+  function documentoLocal() {
     try {
       return JSON.parse(localStorage.getItem(M.CHAVE_APP));
     } catch (_) {
       return null;
     }
   }
+  function contaMarcada() {
+    return localStorage.getItem(M.CHAVE_CONTA) || "";
+  }
+  function mostrarFila() {
+    const conta = contaMarcada();
+    if (!conta) return;
+    texto("st-backup-variavel", B.textoEstado(B.lerFila(localStorage, conta)));
+  }
+  async function enviarAutomatico(modo) {
+    const origemEnvio = F.paginaPermitida(window.location);
+    const supabase = cliente();
+    let sessao = null;
+    if (supabase) {
+      const obtido = await supabase.auth.getSession();
+      sessao = obtido.data && obtido.data.session;
+    }
+    const conta = contaMarcada();
+    if (!conta) return;
+    const antes = localStorage.getItem(M.CHAVE_APP);
+    const copiaAntes = localStorage.getItem(M.CHAVE_COPIA);
+    await B.rodarFila(supabase, localStorage, {
+      conta,
+      sessao,
+      documento: await documentoLocal(),
+      documentoAtual() {
+        return documentoLocal();
+      },
+      online: typeof navigator === "undefined" ? true : navigator.onLine !== false,
+      origemOk: origemEnvio.ok,
+      liberado: B.ABERTO === true,
+      manual: modo === true,
+      retomada: modo === "retomada"
+    });
+    if (localStorage.getItem(M.CHAVE_APP) !== antes) {
+      if (antes == null) localStorage.removeItem(M.CHAVE_APP);
+      else localStorage.setItem(M.CHAVE_APP, antes);
+    }
+    if (localStorage.getItem(M.CHAVE_COPIA) !== copiaAntes) {
+      if (copiaAntes == null) localStorage.removeItem(M.CHAVE_COPIA);
+      else localStorage.setItem(M.CHAVE_COPIA, copiaAntes);
+    }
+    mostrarFila();
+  }
+  let esperaEnvio = 0;
+  window.addEventListener("folha-teste-gravou", () => {
+    const conta = contaMarcada();
+    if (!conta) return;
+    B.anotarMudanca(localStorage, conta);
+    mostrarFila();
+    clearTimeout(esperaEnvio);
+    esperaEnvio = setTimeout(() => {
+      enviarAutomatico(false);
+    }, 800);
+  });
+  window.addEventListener("online", () => {
+    enviarAutomatico("retomada");
+  });
+  if (contaMarcada()) {
+    B.retomarFila(localStorage, contaMarcada());
+    mostrarFila();
+    enviarAutomatico("retomada");
+  }
   $("btn-backup-variavel").addEventListener("click", async () => {
     if (B.ABERTO !== true) {
       texto("st-backup-variavel", mensagem("aguardando_migracao"));
       return;
     }
-    const supabase = cliente();
-    const { data } = await supabase.auth.getSession();
-    const sessao = data && data.session;
-    const origemEnvio = F.paginaPermitida(window.location);
-    if (!origemEnvio.ok) {
-      texto("st-backup-variavel", mensagem(origemEnvio.motivo));
-      return;
-    }
-    const antes = localStorage.getItem(M.CHAVE_APP);
-    const copiaAntes = localStorage.getItem(M.CHAVE_COPIA);
-    const r = await B.enviarDaBase(supabase, localStorage, {
-      liberado: true,
-      sessao,
-      documento: await documentoLocal()
-    });
-    if (localStorage.getItem(M.CHAVE_APP) !== antes || localStorage.getItem(M.CHAVE_COPIA) !== copiaAntes) {
-      if (antes == null) localStorage.removeItem(M.CHAVE_APP);
-      else localStorage.setItem(M.CHAVE_APP, antes);
-      if (copiaAntes == null) localStorage.removeItem(M.CHAVE_COPIA);
-      else localStorage.setItem(M.CHAVE_COPIA, copiaAntes);
-    }
-    if (!r.enviou) {
-      texto("st-backup-variavel", r.motivo === "ja_existe" ? "Esta conta j\xE1 tem a c\xF3pia vari\xE1vel. Nada foi apagado e o envio n\xE3o foi repetido." : mensagem(r.motivo));
-      return;
-    }
-    localStorage.setItem(M.CHAVE_CONTA, sessao.user.id);
-    texto("st-backup-variavel", r.substituiu ? B.MENSAGEM_ATUALIZADA : B.MENSAGEM_GRAVADA);
+    await enviarAutomatico(true);
   });
   $("btn-backup-previa").addEventListener("click", async () => {
     if (B.ABERTO !== true) {
@@ -21673,7 +21982,7 @@ async function iniciar() {
       texto("st-backup-variavel", mensagem(r.motivo));
       return;
     }
-    B.adotarRevisao(localStorage, sessao.user.id, copiaPendente.revisao);
+    B.registrarCopiaAceita(localStorage, sessao.user.id, copiaPendente.documento, copiaPendente.revisao);
     try {
       sessionStorage.setItem(AVISO, B.MENSAGEM_RECOLOCADA);
     } catch (_) {
