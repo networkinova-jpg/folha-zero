@@ -28,6 +28,10 @@ function mensagem(motivo) {
   if (motivo === 'sem_confirmacao') return 'Nada foi recolocado. A prévia está acima.';
   if (motivo === 'versao') return 'A versão do documento não é a desta tela. Nada foi gravado.';
   if (motivo === 'rollback') return 'A gravação falhou. Os lançamentos de teste anteriores foram mantidos.';
+  if (motivo === 'revisao_divergente') return 'A cópia desta conta já mudou. Nada foi substituído e o envio não foi repetido.';
+  if (motivo === 'conta_anterior') return 'Esta sessão não é a conta destes lançamentos. Nada foi enviado.';
+  if (motivo === 'aguardando_migracao') return 'O envio dos lançamentos de teste ainda não está liberado. Nenhum carro saiu deste aparelho.';
+  if (motivo === 'leitura_recusada') return 'Não foi possível ler a cópia desta conta. Nada foi gravado neste aparelho.';
   return 'Não foi possível concluir. Os lançamentos de teste não foram apagados.';
 }
 
@@ -42,7 +46,8 @@ function lerAviso() {
 async function pintar() {
   M.semearSeVazio(localStorage);
   const aviso = lerAviso();
-  if (aviso) texto('st-teste-previa', aviso);
+  if (aviso === B.MENSAGEM_RECOLOCADA) texto('st-backup-variavel', aviso);
+  else if (aviso) texto('st-teste-previa', aviso);
   const local = localStorage.getItem(M.CHAVE_APP);
   let n = 0;
   try { n = JSON.parse(local).entries.length; } catch (_) {}
@@ -56,10 +61,23 @@ async function pintar() {
   texto('st-teste-sessao', sessao ? 'Sessão ativa nesta conta. Nenhum token é mostrado.' : 'Sem sessão. O login Google continua na tela de acesso.');
   const origem = F.paginaPermitida(window.location);
   texto('st-teste-remoto', origem.ok
-    ? 'O envio remoto grava só a fixture canônica, não os carros desta tela. O backup genérico está fechado.'
-    : 'Backup genérico fechado. ' + mensagem(origem.motivo));
+    ? 'Neste site o envio manual grava os lançamentos de teste desta tela. O aplicativo publicado continua fechado.'
+    : 'A cópia variável só abre no site isolado. ' + mensagem(origem.motivo));
   const pode = origem.ok && !!sessao;
   ['btn-teste-enviar', 'btn-teste-recuperar'].forEach((id) => { const el = $(id); if (el) el.disabled = !pode; });
+  ['btn-backup-variavel', 'btn-backup-previa', 'btn-backup-confirmar'].forEach((id) => {
+    const el = $(id); if (el) el.disabled = true;
+  });
+  if (B.ABERTO === true && pode) {
+    const conta = B.podeEnviarDaConta(localStorage, sessao.user.id);
+    if (!localStorage.getItem(M.CHAVE_CONTA)) localStorage.setItem(M.CHAVE_CONTA, sessao.user.id);
+    if (conta.ok) {
+      $('btn-backup-variavel').disabled = false;
+      $('btn-backup-previa').disabled = false;
+    } else {
+      texto('st-backup-variavel', mensagem('conta_anterior'));
+    }
+  }
   const link = $('link-acesso');
   if (link) link.href = window.location.hostname === F.HOST_TESTE ? '/acesso-teste' : 'acesso-teste.html';
 }
@@ -83,11 +101,75 @@ async function iniciar() {
     } catch (_) {}
     window.location.reload();
   });
-  $('btn-backup-variavel').addEventListener('click', () => {
-    const r = B.enviar(null, { documento: M.documentoFixture() });
-    texto('st-backup-variavel', r.enviou
-      ? 'Envio inesperado.'
-      : 'O envio dos lançamentos de teste ainda não está liberado. Nenhum carro saiu deste aparelho.');
+  let copiaPendente = null;
+  async function documentoLocal() {
+    try { return JSON.parse(localStorage.getItem(M.CHAVE_APP)); }
+    catch (_) { return null; }
+  }
+  $('btn-backup-variavel').addEventListener('click', async () => {
+    if (B.ABERTO !== true) {
+      texto('st-backup-variavel', mensagem('aguardando_migracao'));
+      return;
+    }
+    const supabase = cliente();
+    const { data } = await supabase.auth.getSession();
+    const sessao = data && data.session;
+    const origemEnvio = F.paginaPermitida(window.location);
+    if (!origemEnvio.ok) { texto('st-backup-variavel', mensagem(origemEnvio.motivo)); return; }
+    const lido = await B.lerPropria(supabase);
+    if (!lido.ok) { texto('st-backup-variavel', mensagem(lido.motivo)); return; }
+    const plano = B.planejarEnvio({
+      liberado: true,
+      sessao,
+      storage: localStorage,
+      documento: await documentoLocal(),
+      revisaoAtual: lido.vazio ? null : lido.revisao
+    });
+    if (!plano.ok) { texto('st-backup-variavel', mensagem(plano.motivo)); return; }
+    const r = await B.enviar(supabase, plano.pedido, true);
+    if (!r.enviou) {
+      texto('st-backup-variavel', r.motivo === 'ja_existe'
+        ? 'Esta conta já tem a cópia variável. Nada foi apagado e o envio não foi repetido.'
+        : mensagem(r.motivo));
+      return;
+    }
+    localStorage.setItem(M.CHAVE_CONTA, sessao.user.id);
+    texto('st-backup-variavel', r.substituiu
+      ? 'Lançamentos de teste atualizados nesta conta. Nenhum outro aparelho foi apagado.'
+      : 'Lançamentos de teste gravados nesta conta.');
+  });
+  $('btn-backup-previa').addEventListener('click', async () => {
+    if (B.ABERTO !== true) {
+      texto('st-backup-variavel', mensagem('aguardando_migracao'));
+      return;
+    }
+    const supabase = cliente();
+    const lido = await B.lerPropria(supabase);
+    if (!lido.ok) { texto('st-backup-variavel', mensagem(lido.motivo)); return; }
+    if (lido.vazio) {
+      copiaPendente = null;
+      $('btn-backup-confirmar').disabled = true;
+      texto('st-backup-variavel', 'Esta conta ainda não tem cópia variável. Nada foi gravado neste aparelho.');
+      return;
+    }
+    copiaPendente = lido.documento;
+    const info = M.previa(localStorage, lido.documento);
+    const extra = info.colisoes.length ? ' Colisão de id: ' + info.colisoes.join(', ') + '.' : '';
+    const sozinho = info.somenteLocais && info.somenteLocais.length
+      ? ' Há lançamento só neste aparelho: ' + info.somenteLocais.length + '.'
+      : '';
+    texto('st-backup-variavel', 'Prévia da cópia variável: ' + info.novos + ' lançamentos. Locais agora: ' + info.locais + '.' + extra + sozinho + ' Nada foi gravado.');
+    $('btn-backup-confirmar').disabled = false;
+  });
+  $('btn-backup-confirmar').addEventListener('click', () => {
+    if (B.ABERTO !== true || !copiaPendente) {
+      texto('st-backup-variavel', mensagem('aguardando_migracao'));
+      return;
+    }
+    const r = B.recuperar(localStorage, copiaPendente, true);
+    if (!r.ok) { texto('st-backup-variavel', mensagem(r.motivo)); return; }
+    try { sessionStorage.setItem(AVISO, B.MENSAGEM_RECOLOCADA); } catch (_) {}
+    window.location.reload();
   });
   $('btn-teste-enviar').addEventListener('click', async () => {
     const supabase = cliente();

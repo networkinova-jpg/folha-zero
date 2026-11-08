@@ -30,7 +30,7 @@ function servir() {
   const proibidas = [];
   page.on('request', (req) => {
     const u = req.url();
-    if (u.includes('script.google.com') || u.endsWith('/sw.js') || u.includes('/rest/v1/copias_fixture_teste') || u.includes('/rest/v1/snapshots_privados')) proibidas.push(u.split('?')[0]);
+    if (u.includes('script.google.com') || u.endsWith('/sw.js') || u.includes('/rest/v1/copias_fixture_teste') || u.includes('/rest/v1/snapshots_privados') || u.includes('backups_teste_app') || u.includes('backup_teste_gravar')) proibidas.push(u.split('?')[0]);
   });
   await page.goto('http://127.0.0.1:' + porta + '/app-teste.html', { waitUntil: 'networkidle' });
   await page.waitForFunction(() => /OS-FIXTURE-02/.test(document.body.innerText) && /Armazenamento de teste/.test(document.body.innerText));
@@ -49,7 +49,9 @@ function servir() {
   if (chaves.includes('folhazero_contador')) throw new Error('contador real');
   if (await page.locator('#btn-teste-enviar').isEnabled()) throw new Error('envio habilitado fora do site isolado');
   if (await page.locator('#btn-backup-variavel').isEnabled()) throw new Error('backup variavel habilitado');
-  if (!/ainda não está liberado/.test(await page.textContent('#st-backup-variavel'))) throw new Error('aviso do backup ausente');
+  if (await page.locator('#btn-backup-previa').isEnabled()) throw new Error('previa variavel habilitada');
+  if (await page.locator('#btn-backup-confirmar').isEnabled()) throw new Error('confirmacao variavel habilitada');
+  if (!/site isolado/.test(await page.textContent('#st-backup-variavel'))) throw new Error('aviso do backup ausente');
   await page.locator('#card-modo-teste').screenshot({ path: '/opt/cursor/artifacts/folha-zero-app-teste-mobile.png' });
   await page.locator('#view-painel').screenshot({ path: '/opt/cursor/artifacts/folha-zero-app-teste-painel-mobile.png' });
   if (proibidas.length) throw new Error('chamada proibida: ' + proibidas.join(','));

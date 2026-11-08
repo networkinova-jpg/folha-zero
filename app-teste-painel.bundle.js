@@ -357,6 +357,8 @@ var require_backup_teste = __commonJS({
       const TABELA = "backups_teste_app";
       const PROIBIDA = "folhazero_v1";
       const LIMITE = 65536;
+      const ABERTO = true;
+      const MENSAGEM_RECOLOCADA = "C\xF3pia vari\xE1vel recolocada nos lan\xE7amentos de teste. A vers\xE3o anterior ficou na c\xF3pia local de seguran\xE7a.";
       function normalizar(doc) {
         const copia = JSON.parse(JSON.stringify(doc));
         function arrumar(obj) {
@@ -398,21 +400,80 @@ var require_backup_teste = __commonJS({
         if (!v.ok) return { acao: "bloquear", motivo: v.motivo };
         if (!pedido.owner_id) return { acao: "bloquear", motivo: "sessao_ausente" };
         if (pedido.revisao == null) return { acao: "inserir" };
-        if (pedido.revisao < 1) return { acao: "bloquear", motivo: "revisao" };
+        if (!Number.isInteger(pedido.revisao) || pedido.revisao < 1) return { acao: "bloquear", motivo: "revisao" };
         return { acao: "atualizar" };
+      }
+      function classificar(error) {
+        const texto2 = [error && error.message, error && error.details, error && error.hint].join(" ");
+        if (texto2.includes("revisao_divergente")) return "revisao_divergente";
+        if (texto2.includes("sessao_ausente")) return "sessao_ausente";
+        if (texto2.includes("carga_grande")) return "carga_grande";
+        if (texto2.includes("quota_revisao") || texto2.includes("carga_invalida")) return "carga_invalida";
+        if (String(error && error.code || "") === "23505") return "ja_existe";
+        if (String(error && error.code || "") === "42501") return "sessao_ausente";
+        return "envio_recusado";
+      }
+      function planejarEnvio(opts) {
+        const liberado = opts && opts.liberado;
+        if (liberado !== true) return { ok: false, enviou: false, motivo: "aguardando_migracao" };
+        const sessao = opts.sessao;
+        const conta = sessao && sessao.user && sessao.user.id;
+        if (!conta) return { ok: false, enviou: false, motivo: "sessao_ausente" };
+        const dono = podeEnviarDaConta(opts.storage || { getItem() {
+          return null;
+        } }, conta);
+        if (!dono.ok) return { ok: false, enviou: false, motivo: dono.motivo };
+        const documento = normalizar(opts.documento);
+        const v = validar(documento);
+        if (!v.ok) return { ok: false, enviou: false, motivo: v.motivo };
+        const revisao = opts.revisaoAtual == null ? null : opts.revisaoAtual;
+        if (revisao != null && (!Number.isInteger(revisao) || revisao < 1)) {
+          return { ok: false, enviou: false, motivo: "revisao" };
+        }
+        return { ok: true, enviou: false, pedido: { owner_id: conta, revisao, documento } };
+      }
+      async function lerPropria(cliente2) {
+        const { data, error } = await cliente2.from(TABELA).select("revisao,documento").limit(1);
+        if (error) return { ok: false, motivo: "leitura_recusada", vazio: true };
+        const linha = (data || [])[0];
+        if (!linha) return { ok: true, vazio: true, revisao: null, documento: null };
+        return { ok: true, vazio: false, revisao: linha.revisao, documento: linha.documento };
       }
       async function enviar(cliente2, pedido, liberado) {
         const d = decidir(pedido, liberado);
-        if (d.acao === "bloquear") return { ok: false, enviou: false, motivo: d.motivo };
+        if (d.acao === "bloquear") return { ok: false, enviou: false, motivo: d.motivo, repetiu: false, apagou: false };
         const { error } = await cliente2.rpc("backup_teste_gravar", {
           p_revisao_esperada: d.acao === "inserir" ? null : pedido.revisao,
           p_documento: pedido.documento
         });
-        if (!error) return { ok: true, enviou: true, substituiu: d.acao === "atualizar" };
-        if (String(error.code || "") === "23505") return { ok: true, enviou: false, jaExistia: true, motivo: "ja_existe" };
-        return { ok: false, enviou: false, motivo: "envio_recusado" };
+        if (!error) return { ok: true, enviou: true, substituiu: d.acao === "atualizar", repetiu: false, apagou: false };
+        const motivo = classificar(error);
+        if (motivo === "ja_existe") return { ok: true, enviou: false, jaExistia: true, motivo, repetiu: false, apagou: false };
+        return { ok: false, enviou: false, motivo, repetiu: false, apagou: false };
       }
-      const api = { TABELA, PROIBIDA, LIMITE, normalizar, validar, podeEnviarDaConta, decidir, enviar };
+      function recuperar(storage, documento, confirmar) {
+        const modo = root.FolhaModoTeste;
+        if (!modo) return { ok: false, escreveu: false, motivo: "modo_ausente" };
+        const v = validar(documento);
+        if (!v.ok) return { ok: false, escreveu: false, motivo: v.motivo, previa: modo.previa(storage, documento) };
+        return modo.aplicarDocumento(storage, documento, confirmar === true);
+      }
+      const api = {
+        TABELA,
+        PROIBIDA,
+        LIMITE,
+        ABERTO,
+        MENSAGEM_RECOLOCADA,
+        normalizar,
+        validar,
+        podeEnviarDaConta,
+        decidir,
+        planejarEnvio,
+        classificar,
+        lerPropria,
+        enviar,
+        recuperar
+      };
       root.FolhaBackupTeste = api;
       if (typeof module !== "undefined" && module.exports) module.exports = api;
     })(typeof globalThis !== "undefined" ? globalThis : exports);
@@ -21362,6 +21423,10 @@ function mensagem(motivo) {
   if (motivo === "sem_confirmacao") return "Nada foi recolocado. A pr\xE9via est\xE1 acima.";
   if (motivo === "versao") return "A vers\xE3o do documento n\xE3o \xE9 a desta tela. Nada foi gravado.";
   if (motivo === "rollback") return "A grava\xE7\xE3o falhou. Os lan\xE7amentos de teste anteriores foram mantidos.";
+  if (motivo === "revisao_divergente") return "A c\xF3pia desta conta j\xE1 mudou. Nada foi substitu\xEDdo e o envio n\xE3o foi repetido.";
+  if (motivo === "conta_anterior") return "Esta sess\xE3o n\xE3o \xE9 a conta destes lan\xE7amentos. Nada foi enviado.";
+  if (motivo === "aguardando_migracao") return "O envio dos lan\xE7amentos de teste ainda n\xE3o est\xE1 liberado. Nenhum carro saiu deste aparelho.";
+  if (motivo === "leitura_recusada") return "N\xE3o foi poss\xEDvel ler a c\xF3pia desta conta. Nada foi gravado neste aparelho.";
   return "N\xE3o foi poss\xEDvel concluir. Os lan\xE7amentos de teste n\xE3o foram apagados.";
 }
 function lerAviso() {
@@ -21376,7 +21441,8 @@ function lerAviso() {
 async function pintar() {
   M.semearSeVazio(localStorage);
   const aviso = lerAviso();
-  if (aviso) texto("st-teste-previa", aviso);
+  if (aviso === B.MENSAGEM_RECOLOCADA) texto("st-backup-variavel", aviso);
+  else if (aviso) texto("st-teste-previa", aviso);
   const local = localStorage.getItem(M.CHAVE_APP);
   let n = 0;
   try {
@@ -21392,12 +21458,26 @@ async function pintar() {
   }
   texto("st-teste-sessao", sessao ? "Sess\xE3o ativa nesta conta. Nenhum token \xE9 mostrado." : "Sem sess\xE3o. O login Google continua na tela de acesso.");
   const origem = F.paginaPermitida(window.location);
-  texto("st-teste-remoto", origem.ok ? "O envio remoto grava s\xF3 a fixture can\xF4nica, n\xE3o os carros desta tela. O backup gen\xE9rico est\xE1 fechado." : "Backup gen\xE9rico fechado. " + mensagem(origem.motivo));
+  texto("st-teste-remoto", origem.ok ? "Neste site o envio manual grava os lan\xE7amentos de teste desta tela. O aplicativo publicado continua fechado." : "A c\xF3pia vari\xE1vel s\xF3 abre no site isolado. " + mensagem(origem.motivo));
   const pode = origem.ok && !!sessao;
   ["btn-teste-enviar", "btn-teste-recuperar"].forEach((id) => {
     const el = $(id);
     if (el) el.disabled = !pode;
   });
+  ["btn-backup-variavel", "btn-backup-previa", "btn-backup-confirmar"].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = true;
+  });
+  if (B.ABERTO === true && pode) {
+    const conta = B.podeEnviarDaConta(localStorage, sessao.user.id);
+    if (!localStorage.getItem(M.CHAVE_CONTA)) localStorage.setItem(M.CHAVE_CONTA, sessao.user.id);
+    if (conta.ok) {
+      $("btn-backup-variavel").disabled = false;
+      $("btn-backup-previa").disabled = false;
+    } else {
+      texto("st-backup-variavel", mensagem("conta_anterior"));
+    }
+  }
   const link = $("link-acesso");
   if (link) link.href = window.location.hostname === F.HOST_TESTE ? "/acesso-teste" : "acesso-teste.html";
 }
@@ -21422,9 +21502,90 @@ async function iniciar() {
     }
     window.location.reload();
   });
-  $("btn-backup-variavel").addEventListener("click", () => {
-    const r = B.enviar(null, { documento: M.documentoFixture() });
-    texto("st-backup-variavel", r.enviou ? "Envio inesperado." : "O envio dos lan\xE7amentos de teste ainda n\xE3o est\xE1 liberado. Nenhum carro saiu deste aparelho.");
+  let copiaPendente = null;
+  async function documentoLocal() {
+    try {
+      return JSON.parse(localStorage.getItem(M.CHAVE_APP));
+    } catch (_) {
+      return null;
+    }
+  }
+  $("btn-backup-variavel").addEventListener("click", async () => {
+    if (B.ABERTO !== true) {
+      texto("st-backup-variavel", mensagem("aguardando_migracao"));
+      return;
+    }
+    const supabase = cliente();
+    const { data } = await supabase.auth.getSession();
+    const sessao = data && data.session;
+    const origemEnvio = F.paginaPermitida(window.location);
+    if (!origemEnvio.ok) {
+      texto("st-backup-variavel", mensagem(origemEnvio.motivo));
+      return;
+    }
+    const lido = await B.lerPropria(supabase);
+    if (!lido.ok) {
+      texto("st-backup-variavel", mensagem(lido.motivo));
+      return;
+    }
+    const plano = B.planejarEnvio({
+      liberado: true,
+      sessao,
+      storage: localStorage,
+      documento: await documentoLocal(),
+      revisaoAtual: lido.vazio ? null : lido.revisao
+    });
+    if (!plano.ok) {
+      texto("st-backup-variavel", mensagem(plano.motivo));
+      return;
+    }
+    const r = await B.enviar(supabase, plano.pedido, true);
+    if (!r.enviou) {
+      texto("st-backup-variavel", r.motivo === "ja_existe" ? "Esta conta j\xE1 tem a c\xF3pia vari\xE1vel. Nada foi apagado e o envio n\xE3o foi repetido." : mensagem(r.motivo));
+      return;
+    }
+    localStorage.setItem(M.CHAVE_CONTA, sessao.user.id);
+    texto("st-backup-variavel", r.substituiu ? "Lan\xE7amentos de teste atualizados nesta conta. Nenhum outro aparelho foi apagado." : "Lan\xE7amentos de teste gravados nesta conta.");
+  });
+  $("btn-backup-previa").addEventListener("click", async () => {
+    if (B.ABERTO !== true) {
+      texto("st-backup-variavel", mensagem("aguardando_migracao"));
+      return;
+    }
+    const supabase = cliente();
+    const lido = await B.lerPropria(supabase);
+    if (!lido.ok) {
+      texto("st-backup-variavel", mensagem(lido.motivo));
+      return;
+    }
+    if (lido.vazio) {
+      copiaPendente = null;
+      $("btn-backup-confirmar").disabled = true;
+      texto("st-backup-variavel", "Esta conta ainda n\xE3o tem c\xF3pia vari\xE1vel. Nada foi gravado neste aparelho.");
+      return;
+    }
+    copiaPendente = lido.documento;
+    const info = M.previa(localStorage, lido.documento);
+    const extra = info.colisoes.length ? " Colis\xE3o de id: " + info.colisoes.join(", ") + "." : "";
+    const sozinho = info.somenteLocais && info.somenteLocais.length ? " H\xE1 lan\xE7amento s\xF3 neste aparelho: " + info.somenteLocais.length + "." : "";
+    texto("st-backup-variavel", "Pr\xE9via da c\xF3pia vari\xE1vel: " + info.novos + " lan\xE7amentos. Locais agora: " + info.locais + "." + extra + sozinho + " Nada foi gravado.");
+    $("btn-backup-confirmar").disabled = false;
+  });
+  $("btn-backup-confirmar").addEventListener("click", () => {
+    if (B.ABERTO !== true || !copiaPendente) {
+      texto("st-backup-variavel", mensagem("aguardando_migracao"));
+      return;
+    }
+    const r = B.recuperar(localStorage, copiaPendente, true);
+    if (!r.ok) {
+      texto("st-backup-variavel", mensagem(r.motivo));
+      return;
+    }
+    try {
+      sessionStorage.setItem(AVISO, B.MENSAGEM_RECOLOCADA);
+    } catch (_) {
+    }
+    window.location.reload();
   });
   $("btn-teste-enviar").addEventListener("click", async () => {
     const supabase = cliente();
