@@ -1,7 +1,10 @@
 -- Backup variável só do app de teste. Não aplicar neste passo.
 -- Não altera public.copias_fixture_teste nem public.snapshots_privados.
 -- Uma linha por conta. Não há DELETE. Não há hash persistido: o teste compara o jsonb.
--- A escrita autenticada passa só por public.backup_teste_gravar, com a revisão esperada.
+-- A escrita autenticada passa por public.backup_teste_gravar (security invoker, schema exposto).
+-- Ela só delega a private.backup_teste_aplicar (security definer, fora da API).
+-- authenticated precisa de EXECUTE nessa função privada para o invoker alcançá-la.
+-- O dono da linha é só auth.uid(). Não há parâmetro de dono nem GRANT dentro da função.
 -- A revisão para em 100. O documento para em 64 KiB e em 30 lançamentos.
 
 create or replace function private.backup_teste_data_ok(s text)
@@ -393,11 +396,12 @@ end;
 $$;
 
 revoke all on function private.backup_teste_aplicar(integer, jsonb) from public, anon, authenticated;
+grant execute on function private.backup_teste_aplicar(integer, jsonb) to authenticated;
 
 create or replace function public.backup_teste_gravar(p_revisao_esperada integer, p_documento jsonb)
 returns integer
 language plpgsql
-security definer
+security invoker
 set search_path = ''
 as $$
 begin

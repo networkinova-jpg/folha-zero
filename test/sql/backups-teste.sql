@@ -14,6 +14,62 @@ begin
   if n <> 0 then raise exception 'trigger novo vazou para tabela antiga'; end if;
 end $$;
 
+do $$
+declare definer boolean;
+declare args text;
+begin
+  select p.prosecdef, pg_catalog.pg_get_function_identity_arguments(p.oid)
+    into definer, args
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'backup_teste_gravar';
+  if definer then raise exception 'wrapper exposto e security definer'; end if;
+  if args is distinct from 'p_revisao_esperada integer, p_documento jsonb' then
+    raise exception 'assinatura do wrapper: %', args;
+  end if;
+  select p.prosecdef into definer
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'private' and p.proname = 'backup_teste_aplicar';
+  if definer is distinct from true then raise exception 'aplicar deixou de ser definer'; end if;
+  if has_function_privilege('anon', 'public.backup_teste_gravar(integer,jsonb)', 'execute')
+     or has_function_privilege('public', 'public.backup_teste_gravar(integer,jsonb)', 'execute') then
+    raise exception 'anon ou public executa o wrapper';
+  end if;
+  if not has_function_privilege('authenticated', 'public.backup_teste_gravar(integer,jsonb)', 'execute') then
+    raise exception 'authenticated sem execute no wrapper';
+  end if;
+  if has_function_privilege('anon', 'private.backup_teste_aplicar(integer,jsonb)', 'execute')
+     or has_function_privilege('public', 'private.backup_teste_aplicar(integer,jsonb)', 'execute') then
+    raise exception 'anon ou public executa aplicar';
+  end if;
+  if not has_function_privilege('authenticated', 'private.backup_teste_aplicar(integer,jsonb)', 'execute') then
+    raise exception 'cadeia do invoker sem execute em aplicar';
+  end if;
+  if has_function_privilege('authenticated', 'private.backup_teste_documento_valido(jsonb)', 'execute')
+     or has_function_privilege('authenticated', 'private.backup_teste_data_ok(text)', 'execute')
+     or has_function_privilege('authenticated', 'private.backup_teste_local_ok(text)', 'execute')
+     or has_function_privilege('authenticated', 'private.backup_teste_utc_ok(text)', 'execute')
+     or has_function_privilege('authenticated', 'private.backup_teste_inteiro_ok(jsonb)', 'execute')
+     or has_function_privilege('authenticated', 'private.backup_teste_validar()', 'execute')
+     or has_function_privilege('anon', 'private.backup_teste_documento_valido(jsonb)', 'execute')
+     or has_function_privilege('anon', 'private.backup_teste_aplicar(integer,jsonb)', 'execute') then
+    raise exception 'helper exposto a anon ou authenticated';
+  end if;
+  if has_schema_privilege('anon', 'public', 'create')
+     or has_schema_privilege('authenticated', 'public', 'create')
+     or has_schema_privilege('anon', 'private', 'create')
+     or has_schema_privilege('authenticated', 'private', 'create') then
+    raise exception 'anon ou authenticated cria no schema';
+  end if;
+  if has_table_privilege('authenticated', 'public.backups_teste_app', 'insert')
+     or has_table_privilege('authenticated', 'public.backups_teste_app', 'update')
+     or has_table_privilege('authenticated', 'public.backups_teste_app', 'delete')
+     or has_table_privilege('anon', 'public.backups_teste_app', 'select') then
+    raise exception 'grant de tabela folgado';
+  end if;
+end $$;
+
 create temp table doc_variavel (documento jsonb);
 insert into doc_variavel (documento) values ($fx$
 {
@@ -157,6 +213,21 @@ begin
   if rev is distinct from 2 then raise exception 'revisao nao avancou: %', rev; end if;
 end $$;
 
+select private.backup_teste_aplicar(2, jsonb_set(documento, '{entries,1,obs}', '"Observação pela função privada"'::jsonb))
+from doc_variavel;
+
+do $$
+declare obs text; rev int; dono uuid;
+begin
+  select documento->'entries'->1->>'obs', revisao, owner_id into obs, rev, dono
+  from public.backups_teste_app;
+  if obs is distinct from 'Observação pela função privada' then raise exception 'chamada direta nao gravou'; end if;
+  if rev is distinct from 3 then raise exception 'chamada direta nao avancou: %', rev; end if;
+  if dono is distinct from '11111111-1111-4111-8111-111111111111'::uuid then
+    raise exception 'chamada direta trocou o dono';
+  end if;
+end $$;
+
 do $$
 declare antes text;
 begin
@@ -294,20 +365,46 @@ begin
     raise exception 'insert direto com erro inesperado: %', sqlerrm;
   end;
   begin
-    perform private.backup_teste_aplicar(null, documento) from doc_variavel;
-    raise exception 'ataque passou: funcao privada';
+    perform private.backup_teste_documento_valido((select documento from doc_variavel));
+    raise exception 'ataque passou: helper';
   exception when insufficient_privilege then
     null;
   when others then
     if sqlerrm like 'ataque passou:%' then raise; end if;
-    raise exception 'funcao privada com erro inesperado: %', sqlerrm;
+    raise exception 'helper com erro inesperado: %', sqlerrm;
   end;
-  if (select documento->'entries'->1->>'obs' from public.backups_teste_app
-      where owner_id = '11111111-1111-4111-8111-111111111111') is distinct from antes then
-    raise exception 'spoof alterou a conta original';
-  end if;
+  begin
+    perform private.backup_teste_aplicar(3, (select documento from doc_variavel));
+    raise exception 'ataque passou: revisao de outra conta';
+  exception when others then
+    if sqlerrm like 'ataque passou:%' then raise; end if;
+    if sqlerrm not like '%revisao_divergente%' then
+      raise exception 'revisao de outra conta com erro inesperado: %', sqlerrm;
+    end if;
+  end;
+  perform private.backup_teste_aplicar(null, (select documento from doc_variavel));
 end $$;
 reset role;
+
+do $$
+declare obs_a text; rev_a int; dono_b uuid; n_b int;
+begin
+  select documento->'entries'->1->>'obs', revisao into obs_a, rev_a
+  from public.backups_teste_app
+  where owner_id = '11111111-1111-4111-8111-111111111111';
+  if obs_a is distinct from 'Observação pela função privada' or rev_a is distinct from 3 then
+    raise exception 'outra conta alterou o original';
+  end if;
+  select count(*) into n_b
+  from public.backups_teste_app
+  where owner_id = '22222222-2222-4222-8222-222222222222';
+  select owner_id into dono_b
+  from public.backups_teste_app
+  where owner_id = '22222222-2222-4222-8222-222222222222';
+  if n_b is distinct from 1 or dono_b is distinct from '22222222-2222-4222-8222-222222222222'::uuid then
+    raise exception 'chamada direta nao ficou na propria conta';
+  end if;
+end $$;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '66666666-6666-4666-8666-666666666666', false);
@@ -329,6 +426,26 @@ exception when insufficient_privilege then
 when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
 end $$;
+do $$
+begin
+  perform public.backup_teste_gravar(null, (select documento from doc_variavel));
+  raise exception 'ataque passou: anon wrapper';
+exception when insufficient_privilege then
+  null;
+when others then
+  if sqlerrm like 'ataque passou:%' then raise; end if;
+  raise exception 'anon wrapper com erro inesperado: %', sqlerrm;
+end $$;
+do $$
+begin
+  perform private.backup_teste_aplicar(null, (select documento from doc_variavel));
+  raise exception 'ataque passou: anon aplicar';
+exception when insufficient_privilege then
+  null;
+when others then
+  if sqlerrm like 'ataque passou:%' then raise; end if;
+  raise exception 'anon aplicar com erro inesperado: %', sqlerrm;
+end $$;
 reset role;
 
 set role authenticated;
@@ -342,6 +459,15 @@ exception when others then
   if sqlerrm not like '%sessao_ausente%' then
     raise exception 'sessao ausente com erro inesperado: %', sqlerrm;
   end if;
+  begin
+    perform private.backup_teste_aplicar(null, (select documento from doc_variavel));
+    raise exception 'ataque passou: sessao ausente direta';
+  exception when others then
+    if sqlerrm like 'ataque passou:%' then raise; end if;
+    if sqlerrm not like '%sessao_ausente%' then
+      raise exception 'sessao ausente direta com erro inesperado: %', sqlerrm;
+    end if;
+  end;
 end $$;
 reset role;
 
