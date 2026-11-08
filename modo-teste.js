@@ -30,7 +30,7 @@
           createdAt: 1762128000000, updatedAt: 1762128000000
         }
       ],
-      quinzenas: { 'INOVA Blindagem|2026|11|1': 'Aberta' },
+      quinzenas: { 'INOVA Blindagem|2026-11|1': 'Aberta' },
       descontos: {},
       settings: {
         operador: 'Pessoa Exemplo', setorOperador: 'Tapeçaria', lastBackup: null,
@@ -67,11 +67,14 @@
     const atuais = local.ok && local.documento && Array.isArray(local.documento.entries) ? local.documento.entries : [];
     const entradas = novo && Array.isArray(novo.entries) ? novo.entries : [];
     const mapa = new Map(atuais.map((e) => [e.id, resumo(e)]));
+    const idsNovos = new Set(entradas.map((e) => e.id));
     const colisoes = entradas.filter((e) => mapa.has(e.id) && mapa.get(e.id) !== resumo(e)).map((e) => e.id);
+    const somenteLocais = atuais.filter((e) => e && !idsNovos.has(e.id)).map((e) => e.id);
     return {
       locais: atuais.length,
       novos: entradas.length,
       colisoes,
+      somenteLocais,
       versao: novo && novo.version,
       ids: entradas.map((e) => e.id)
     };

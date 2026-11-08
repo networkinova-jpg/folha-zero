@@ -37,12 +37,19 @@ function servir() {
   await page.locator('#btn-previa-fixture').click();
   const previa = await page.textContent('#st-teste-previa');
   if (!/Nada foi gravado/.test(previa)) throw new Error('previa: ' + previa);
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'networkidle' }),
+    page.locator('#btn-confirmar-fixture').click()
+  ]);
+  await page.waitForFunction(() => /Lançamentos de teste recolocados/.test(document.body.innerText));
   const chaves = await page.evaluate(() => Object.keys(localStorage));
   if (chaves.includes('folhazero_v1')) throw new Error('leu o aplicativo');
   if (!chaves.includes('folhazero_teste_app')) throw new Error('sem armazenamento de teste');
+  if (!chaves.includes('folhazero_teste_app_copia')) throw new Error('sem copia local');
   if (chaves.includes('folhazero_contador')) throw new Error('contador real');
   if (await page.locator('#btn-teste-enviar').isEnabled()) throw new Error('envio habilitado fora do site isolado');
-  if (await page.locator('#btn-confirmar-fixture').isEnabled() === false) throw new Error('confirmacao nao apareceu depois da previa');
+  if (await page.locator('#btn-backup-variavel').isEnabled()) throw new Error('backup variavel habilitado');
+  if (!/ainda não está liberado/.test(await page.textContent('#st-backup-variavel'))) throw new Error('aviso do backup ausente');
   await page.locator('#card-modo-teste').screenshot({ path: '/opt/cursor/artifacts/folha-zero-app-teste-mobile.png' });
   await page.locator('#view-painel').screenshot({ path: '/opt/cursor/artifacts/folha-zero-app-teste-painel-mobile.png' });
   if (proibidas.length) throw new Error('chamada proibida: ' + proibidas.join(','));

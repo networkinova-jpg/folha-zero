@@ -2,9 +2,12 @@ import { createClient } from '@supabase/supabase-js';
 import { FOLHA_ZERO_TESTE } from './acesso-teste-config.js';
 import './login-google.js';
 import './fixture-teste.js';
+import './backup-teste.js';
 
 const M = globalThis.FolhaModoTeste;
 const F = globalThis.FolhaFixture;
+const B = globalThis.FolhaBackupTeste;
+const AVISO = 'folhazero_teste_aviso';
 const $ = (id) => document.getElementById(id);
 
 function texto(id, valor) { const el = $(id); if (el) el.textContent = valor; }
@@ -28,8 +31,18 @@ function mensagem(motivo) {
   return 'Não foi possível concluir. Os lançamentos de teste não foram apagados.';
 }
 
+function lerAviso() {
+  try {
+    const t = sessionStorage.getItem(AVISO);
+    if (t) sessionStorage.removeItem(AVISO);
+    return t || '';
+  } catch (_) { return ''; }
+}
+
 async function pintar() {
   M.semearSeVazio(localStorage);
+  const aviso = lerAviso();
+  if (aviso) texto('st-teste-previa', aviso);
   const local = localStorage.getItem(M.CHAVE_APP);
   let n = 0;
   try { n = JSON.parse(local).entries.length; } catch (_) {}
@@ -56,15 +69,25 @@ async function iniciar() {
   $('btn-previa-fixture').addEventListener('click', () => {
     const info = M.previa(localStorage, M.documentoFixture());
     const extra = info.colisoes.length ? ' Colisão de id: ' + info.colisoes.join(', ') + '.' : ' Sem colisão de conteúdo.';
-    texto('st-teste-previa', 'Prévia: ' + info.novos + ' lançamentos, valor zero e sem valor, pausas e situação. Locais agora: ' + info.locais + '.' + extra + ' Nada foi gravado.');
+    const sozinho = info.somenteLocais && info.somenteLocais.length
+      ? ' Há lançamento só neste aparelho: ' + info.somenteLocais.length + '.'
+      : '';
+    texto('st-teste-previa', 'Prévia dos lançamentos de teste: ' + info.novos + ' itens, valor zero e sem valor, pausas e situação. Locais agora: ' + info.locais + '.' + extra + sozinho + ' Nada foi gravado.');
     $('btn-confirmar-fixture').disabled = false;
   });
   $('btn-confirmar-fixture').addEventListener('click', () => {
     const r = M.aplicarDocumento(localStorage, M.documentoFixture(), true);
-    texto('st-teste-previa', r.ok
-      ? 'Fixture recolocada no app de teste. A versão anterior ficou na cópia local de segurança.'
-      : mensagem(r.motivo));
-    if (r.ok) window.location.reload();
+    if (!r.ok) { texto('st-teste-previa', mensagem(r.motivo)); return; }
+    try {
+      sessionStorage.setItem(AVISO, 'Lançamentos de teste recolocados. A versão anterior ficou na cópia local de segurança.');
+    } catch (_) {}
+    window.location.reload();
+  });
+  $('btn-backup-variavel').addEventListener('click', () => {
+    const r = B.enviar(null, { documento: M.documentoFixture() });
+    texto('st-backup-variavel', r.enviou
+      ? 'Envio inesperado.'
+      : 'O envio dos lançamentos de teste ainda não está liberado. Nenhum carro saiu deste aparelho.');
   });
   $('btn-teste-enviar').addEventListener('click', async () => {
     const supabase = cliente();

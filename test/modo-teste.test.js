@@ -30,7 +30,7 @@ test('a semente e a recolocação não tocam o aplicativo publicado', () => {
   assert.equal(doc.entries[1].valor, null);
   assert.equal(doc.entries[0].pausas[0].motivo, 'Fim de expediente');
   assert.equal(doc.entries[1].situacao, 'Em processo');
-  assert.equal(doc.quinzenas['INOVA Blindagem|2026|11|1'], 'Aberta');
+  assert.equal(doc.quinzenas['INOVA Blindagem|2026-11|1'], 'Aberta');
   assert.equal(storage.chaves.some((c) => c[1] === modo.PROIBIDA), false);
   const fxDoc = fx.gerarConjunto();
   assert.equal(doc.entries[0].id, fxDoc.entries[0].id);

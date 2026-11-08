@@ -18,4 +18,8 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrati
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261107234500_snapshot_fixture.sql"
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/test/sql/snapshot-fixture.sql"
 bash "${raiz}/test/sql/concorrencia-fixture.sh" "${db}" "${raiz}"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261108010000_backups_teste_app.sql"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261108010000_backups_teste_app.sql"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/test/sql/backups-teste.sql"
+bash "${raiz}/test/sql/concorrencia-backup.sh" "${db}" "${raiz}"
 echo "sql ok ${db}"

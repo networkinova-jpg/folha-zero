@@ -350,6 +350,87 @@ var require_fixture_teste = __commonJS({
   }
 });
 
+// backup-teste.js
+var require_backup_teste = __commonJS({
+  "backup-teste.js"(exports, module) {
+    (function(root) {
+      const TABELA = "backups_teste_app";
+      const PROIBIDA = "folhazero_v1";
+      const LIMITE = 65536;
+      function normalizar(doc) {
+        const copia = JSON.parse(JSON.stringify(doc));
+        function arrumar(obj) {
+          const out = {};
+          Object.keys(obj || {}).forEach((chave) => {
+            const m = chave.match(/^(.*)\|(\d{4})\|(\d{2})\|([12])$/);
+            out[m ? m[1] + "|" + m[2] + "-" + m[3] + "|" + m[4] : chave] = obj[chave];
+          });
+          return out;
+        }
+        copia.quinzenas = arrumar(copia.quinzenas);
+        copia.descontos = arrumar(copia.descontos);
+        return copia;
+      }
+      function validar(doc) {
+        if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { ok: false, motivo: "carga_invalida" };
+        if (doc.version !== 2 || !Array.isArray(doc.entries)) return { ok: false, motivo: "carga_invalida" };
+        if (doc.entries.length > 30) return { ok: false, motivo: "carga_invalida" };
+        const texto2 = JSON.stringify(doc);
+        if (texto2.length > LIMITE) return { ok: false, motivo: "carga_grande" };
+        const ids = {};
+        for (const entrada of doc.entries) {
+          if (!entrada || typeof entrada.id !== "string" || !entrada.id) return { ok: false, motivo: "carga_invalida" };
+          if (ids[entrada.id]) return { ok: false, motivo: "id_duplicado" };
+          ids[entrada.id] = true;
+          if (Object.prototype.hasOwnProperty.call(entrada, "marca")) return { ok: false, motivo: "carga_invalida" };
+        }
+        if (Object.prototype.hasOwnProperty.call(doc, "marca")) return { ok: false, motivo: "carga_invalida" };
+        return { ok: true };
+      }
+      function podeEnviarDaConta(storage, contaAtual) {
+        const marcada = storage.getItem("folhazero_teste_conta");
+        if (marcada && contaAtual && marcada !== contaAtual) return { ok: false, motivo: "conta_anterior" };
+        return { ok: true };
+      }
+      function decidir(pedido, liberado) {
+        if (liberado !== true) return { acao: "bloquear", motivo: "aguardando_migracao" };
+        const v = validar(pedido && pedido.documento);
+        if (!v.ok) return { acao: "bloquear", motivo: v.motivo };
+        if (!pedido.owner_id) return { acao: "bloquear", motivo: "sessao_ausente" };
+        if (pedido.revisao == null) return { acao: "inserir" };
+        if (pedido.revisao < 1) return { acao: "bloquear", motivo: "revisao" };
+        return { acao: "atualizar" };
+      }
+      async function enviar(cliente2, pedido, liberado) {
+        const d = decidir(pedido, liberado);
+        if (d.acao === "bloquear") return { ok: false, enviou: false, motivo: d.motivo };
+        const tabela = cliente2.from(TABELA);
+        let error;
+        if (d.acao === "inserir") {
+          ({ error } = await tabela.insert({
+            owner_id: pedido.owner_id,
+            revisao: 1,
+            bytes: 1,
+            documento: pedido.documento
+          }));
+        } else {
+          ({ error } = await tabela.update({
+            documento: pedido.documento,
+            revisao: pedido.revisao + 1,
+            bytes: 1
+          }).eq("owner_id", pedido.owner_id).eq("revisao", pedido.revisao));
+        }
+        if (!error) return { ok: true, enviou: true, substituiu: d.acao === "atualizar" };
+        if (String(error.code || "") === "23505") return { ok: true, enviou: false, jaExistia: true, motivo: "ja_existe" };
+        return { ok: false, enviou: false, motivo: "envio_recusado" };
+      }
+      const api = { TABELA, PROIBIDA, LIMITE, normalizar, validar, podeEnviarDaConta, decidir, enviar };
+      root.FolhaBackupTeste = api;
+      if (typeof module !== "undefined" && module.exports) module.exports = api;
+    })(typeof globalThis !== "undefined" ? globalThis : exports);
+  }
+});
+
 // node_modules/@supabase/supabase-js/dist/tracingRegistry.mjs
 var EXTRACTOR_KEY = /* @__PURE__ */ Symbol.for("@supabase/supabase-js.traceContextExtractor");
 function getTraceContextExtractor() {
@@ -21267,9 +21348,12 @@ if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and b
 // app-teste-painel.js
 var import_login_google = __toESM(require_login_google());
 var import_fixture_teste = __toESM(require_fixture_teste());
+var import_backup_teste = __toESM(require_backup_teste());
 import { FOLHA_ZERO_TESTE } from "./acesso-teste-config.js";
 var M = globalThis.FolhaModoTeste;
 var F = globalThis.FolhaFixture;
+var B = globalThis.FolhaBackupTeste;
+var AVISO = "folhazero_teste_aviso";
 var $ = (id) => document.getElementById(id);
 function texto(id, valor) {
   const el = $(id);
@@ -21292,8 +21376,19 @@ function mensagem(motivo) {
   if (motivo === "rollback") return "A grava\xE7\xE3o falhou. Os lan\xE7amentos de teste anteriores foram mantidos.";
   return "N\xE3o foi poss\xEDvel concluir. Os lan\xE7amentos de teste n\xE3o foram apagados.";
 }
+function lerAviso() {
+  try {
+    const t = sessionStorage.getItem(AVISO);
+    if (t) sessionStorage.removeItem(AVISO);
+    return t || "";
+  } catch (_) {
+    return "";
+  }
+}
 async function pintar() {
   M.semearSeVazio(localStorage);
+  const aviso = lerAviso();
+  if (aviso) texto("st-teste-previa", aviso);
   const local = localStorage.getItem(M.CHAVE_APP);
   let n = 0;
   try {
@@ -21323,13 +21418,25 @@ async function iniciar() {
   $("btn-previa-fixture").addEventListener("click", () => {
     const info = M.previa(localStorage, M.documentoFixture());
     const extra = info.colisoes.length ? " Colis\xE3o de id: " + info.colisoes.join(", ") + "." : " Sem colis\xE3o de conte\xFAdo.";
-    texto("st-teste-previa", "Pr\xE9via: " + info.novos + " lan\xE7amentos, valor zero e sem valor, pausas e situa\xE7\xE3o. Locais agora: " + info.locais + "." + extra + " Nada foi gravado.");
+    const sozinho = info.somenteLocais && info.somenteLocais.length ? " H\xE1 lan\xE7amento s\xF3 neste aparelho: " + info.somenteLocais.length + "." : "";
+    texto("st-teste-previa", "Pr\xE9via dos lan\xE7amentos de teste: " + info.novos + " itens, valor zero e sem valor, pausas e situa\xE7\xE3o. Locais agora: " + info.locais + "." + extra + sozinho + " Nada foi gravado.");
     $("btn-confirmar-fixture").disabled = false;
   });
   $("btn-confirmar-fixture").addEventListener("click", () => {
     const r = M.aplicarDocumento(localStorage, M.documentoFixture(), true);
-    texto("st-teste-previa", r.ok ? "Fixture recolocada no app de teste. A vers\xE3o anterior ficou na c\xF3pia local de seguran\xE7a." : mensagem(r.motivo));
-    if (r.ok) window.location.reload();
+    if (!r.ok) {
+      texto("st-teste-previa", mensagem(r.motivo));
+      return;
+    }
+    try {
+      sessionStorage.setItem(AVISO, "Lan\xE7amentos de teste recolocados. A vers\xE3o anterior ficou na c\xF3pia local de seguran\xE7a.");
+    } catch (_) {
+    }
+    window.location.reload();
+  });
+  $("btn-backup-variavel").addEventListener("click", () => {
+    const r = B.enviar(null, { documento: M.documentoFixture() });
+    texto("st-backup-variavel", r.enviou ? "Envio inesperado." : "O envio dos lan\xE7amentos de teste ainda n\xE3o est\xE1 liberado. Nenhum carro saiu deste aparelho.");
   });
   $("btn-teste-enviar").addEventListener("click", async () => {
     const supabase = cliente();
