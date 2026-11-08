@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f3d5e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Folha Zero">
+<title>Folha Zero: app de teste</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar no-print">
+  <div class="brand"><span class="logo">FZ</span><div><strong>Folha Zero teste</strong><small id="brand-sub">Modo teste</small></div></div>
+</header>
+
+<main>
+  <div class="card" id="card-modo-teste">
+    <h2>Modo teste</h2>
+    <p class="acesso-aviso">Esta versão não é o aplicativo publicado. Os lançamentos ficam numa chave separada. O backup genérico dos carros desta tela está fechado.</p>
+    <p id="st-teste-local" class="hint">Preparando o armazenamento de teste…</p>
+    <p id="st-teste-sessao" class="hint"></p>
+    <p id="st-teste-remoto" class="hint"></p>
+    <p class="hint"><a id="link-acesso" href="acesso-teste.html">Entrar com Google na tela de acesso</a></p>
+    <button type="button" class="btn ghost" id="btn-previa-fixture">Ver prévia da fixture</button>
+    <button type="button" class="btn primary" id="btn-confirmar-fixture" disabled>Confirmar recolocação da fixture</button>
+    <p id="st-teste-previa" class="hint"></p>
+    <button type="button" class="btn primary" id="btn-teste-enviar" disabled>Enviar fixture canônica</button>
+    <button type="button" class="btn ghost" id="btn-teste-recuperar" disabled>Recuperar fixture na chave de teste</button>
+    <p id="st-teste-nuvem" class="hint"></p>
+  </div>
+  <!-- INÍCIO -->
+  <section id="view-painel" class="view active">
+    <div id="trial-alert" class="alert info hidden"></div>
+    <div id="exemplo-alert" class="alert info hidden">Exibindo <b>dados de exemplo</b>. Para começar do zero, vá em Empresas e toque em Limpar dados.</div>
+    <div class="card hero">
+      <div class="qnav">
+        <button type="button" class="btn ghost small" id="p-prev" aria-label="Quinzena anterior">‹</button>
+        <div class="qtitle"><small>Quinzena</small><strong id="p-titulo"></strong></div>
+        <button type="button" class="btn ghost small" id="p-next" aria-label="Próxima quinzena">›</button>
+      </div>
+      <p class="pay" id="p-pagamento"></p>
+      <button type="button" class="btn small fechar-btn" id="p-fechar">Fechar quinzena</button>
+      <button type="button" class="btn ghost small hidden" id="p-atual">Voltar para a quinzena atual</button>
+    </div>
+    <button type="button" class="btn accent big xl" id="p-lancar">＋ Lançar carro</button>
+    <div class="card">
+      <h2>Resumo da quinzena</h2>
+      <div class="nums">
+        <div class="num"><b id="p-fin">0</b><span>finalizados</span></div>
+        <div class="num"><b id="p-and">0</b><span>em andamento</span></div>
+      </div>
+      <div id="p-money"></div>
+      <p class="hint">Finalizados e em andamento: carros iniciados nesta quinzena. Os valores e as folhas das empresas contam pela data de término. O valor aparece só no app, nunca na folha.</p>
+    </div>
+    <h2 class="sec">Empresas</h2>
+    <div id="p-cards"></div>
+    <div class="card">
+      <h2>Em andamento <span class="badge" id="p-and-count">0</span></h2>
+      <div id="p-andamento"></div>
+    </div>
+    <button type="button" class="btn ghost big relmes-btn" id="p-relmes">Relatório do mês (tempo por carro)</button>
+    <div id="p-alertas"></div>
+    <div class="card">
+      <h2>Últimos lançamentos</h2>
+      <div id="p-ultimos"></div>
+    </div>
+  </section>
+
+  <!-- LANÇAR -->
+  <section id="view-lancar" class="view">
+    <form id="form-lanc" class="card" autocomplete="off" novalidate>
+      <h2 id="form-title">Novo lançamento</h2>
+      <input type="hidden" id="f-id">
+      <label>Empresa<select id="f-empresa" required></select></label>
+      <label>Setor<select id="f-setor" required></select></label>
+      <div class="dt-row">
+        <label>Data início<input type="date" id="f-inicio" autocomplete="off" required></label>
+        <label>Hora início<input type="time" id="f-hora-inicio" autocomplete="off"></label>
+        <button type="button" class="btn ghost small agora" id="btn-agora-ini" aria-label="Preencher data e hora início com agora">Agora</button>
+      </div>
+      <div class="dt-help"><button type="button" class="btn ghost small" id="btn-hoje">Só a data de hoje</button><small class="hint">A hora é opcional.</small></div>
+      <label>OS
+        <div class="inline"><input type="text" id="f-os" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="text" name="os-nao-preencher" required><button type="button" class="btn ghost small qr-btn" id="btn-ler-qr" aria-label="Ler o QR code da OS com a câmera"><span aria-hidden="true">📷</span> Ler QR</button></div>
+      </label>
+      <label>Veículo<input type="text" id="f-veiculo" autocomplete="off" autocorrect="off" spellcheck="false" name="veiculo-nao-preencher" required></label>
+      <label>Valor (R$)
+        <div class="inline"><input type="text" id="f-valor" autocomplete="off" inputmode="decimal" spellcheck="false" name="valor-nao-preencher" placeholder="0,00"><button type="button" class="btn ghost small" id="btn-valor-padrao" disabled>Usar valor padrão</button></div>
+        <small class="hint" id="f-valor-hint"></small>
+      </label>
+      <label>Ajudante (R$)<input type="text" id="f-ajudante" autocomplete="off" inputmode="decimal" spellcheck="false" name="ajudante-nao-preencher" placeholder="0,00"><small class="hint">Opcional: quanto você pagou ao ajudante neste carro. Não sai na folha.</small></label>
+      <div id="lbl-termino" class="hidden">
+        <div class="dt-row">
+          <label>Data término<input type="date" id="f-termino" autocomplete="off"></label>
+          <label>Hora término<input type="time" id="f-hora-termino" autocomplete="off"></label>
+          <button type="button" class="btn ghost small agora" id="btn-agora-fim" aria-label="Preencher data e hora término com agora">Agora</button>
+        </div>
+        <small class="hint">Deixe a data vazia para manter o serviço em andamento. A hora é opcional.</small>
+      </div>
+      <div id="f-pausas-box" class="hidden">
+        <h3 class="pz-tit">Pausas</h3>
+        <div id="f-pausas"></div>
+        <small class="hint">Corrija o início e o fim (data e hora) ou exclua uma pausa lançada errada. Fim vazio = pausa em andamento. As mudanças valem ao tocar em Salvar alterações.</small>
+      </div>
+      <label>Observação<textarea id="f-obs" rows="2" autocomplete="off" spellcheck="false" name="obs-nao-preencher"></textarea></label>
+      <div class="actions">
+        <button type="submit" class="btn primary big" id="btn-salvar">Salvar lançamento</button>
+        <button type="button" class="btn ghost big hidden" id="btn-reabrir">↺ Reabrir carro</button>
+        <button type="button" class="btn ghost big hidden" id="btn-cancelar-edicao">Cancelar edição</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- LISTA -->
+  <section id="view-lista" class="view">
+    <div class="card">
+      <label class="busca-lbl">Pesquisar OS<input type="search" id="l-busca" placeholder="Pesquisar OS" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"></label>
+      <h2>Filtros</h2>
+      <div class="row2">
+        <label>Empresa<select id="l-empresa"></select></label>
+        <label>Filtrar por<select id="l-status"><option value="">Todos</option><option value="andamento">Em andamento</option><option value="finalizado">Finalizado</option><option value="semvalor">Sem valor</option><option value="pausado">Pausados</option></select></label>
+      </div>
+      <div class="row2">
+        <label>De<input type="date" id="l-de" autocomplete="off"></label>
+        <label>Até<input type="date" id="l-ate" autocomplete="off"></label>
+      </div>
+      <p class="hint">O período usa a data término dos finalizados e a data início dos que estão em andamento. Em "Filtrar por" dá para escolher a situação do carro.</p>
+      <button type="button" class="btn ghost small" id="l-limpar">Limpar filtros</button>
+    </div>
+    <p class="summary" id="l-resumo"></p>
+    <div id="l-lista"></div>
+  </section>
+
+  <!-- FOLHA -->
+  <section id="view-folha" class="view">
+    <div class="card no-print">
+      <h2>Folha quinzenal</h2>
+      <label>Empresa<select id="fo-empresa"></select></label>
+      <div class="row3">
+        <label>Mês<select id="fo-mes"></select></label>
+        <label>Ano<select id="fo-ano"></select></label>
+        <label>Quinzena<select id="fo-q"><option value="1">1 a 15</option><option value="2">16 ao fim</option></select></label>
+      </div>
+      <p class="alert info">Entram na folha somente os serviços <strong>finalizados</strong> com <strong>data término</strong> dentro da quinzena. Serviços em andamento não entram.</p>
+      <p class="hint" id="fo-info"></p>
+      <div class="row2">
+        <label>Status desta quinzena<select id="fo-status"></select></label>
+        <label>Outros descontos (R$)<input type="text" id="fo-desconto" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="0,00"></label>
+      </div>
+      <div id="fo-money"></div>
+      <div class="actions">
+        <button type="button" class="btn primary big" id="btn-pdf">Baixar folha em PDF</button>
+        <button type="button" class="btn ghost big" id="btn-imprimir">Imprimir</button>
+        <button type="button" class="btn accent big" id="fo-fechar">Fechar quinzena (todas as empresas)</button>
+      </div>
+      <p class="hint">"Baixar folha em PDF" gera o arquivo no próprio app (funciona sem internet). "Imprimir" usa a impressão do navegador.</p>
+    </div>
+    <div id="folha-wrap"><div id="folha"></div></div>
+  </section>
+
+  <!-- EMPRESAS E AJUSTES -->
+  <section id="view-ajustes" class="view">
+    <div class="card">
+      <h2>Empresas</h2>
+      <p class="hint">Regra de pagamento (todas): carros dos dias 1 a 15 são pagos no dia 30; dos dias 16 ao fim do mês, no dia 15 do mês seguinte. Em fevereiro vale o último dia do mês.</p>
+      <p class="hint">Valor padrão: nunca é preenchido sozinho. No lançamento, toque em "Usar valor padrão" para aplicar.</p>
+      <div id="s-valores"></div>
+      <button type="button" class="btn primary" id="btn-salvar-valores">Salvar valores padrão</button>
+    </div>
+    <div class="card">
+      <h2>Imposto sobre nota fiscal</h2>
+      <p class="hint">Digite a alíquota de imposto (%) que cada empresa desconta. O app calcula o imposto sobre o bruto da quinzena e mostra no Desconto. Deixe vazio se não tem imposto.</p>
+      <div id="s-aliquotas"></div>
+      <button type="button" class="btn primary" id="btn-salvar-aliq">Salvar alíquotas</button>
+    </div>
+    <div class="card">
+      <h2>Operador</h2>
+      <label>Nome que sai na folha<input type="text" id="s-operador" autocomplete="off" spellcheck="false"></label>
+      <label>Seu setor (aparece no topo do app)<select id="s-setor-op"></select></label>
+      <button type="button" class="btn primary" id="btn-salvar-op">Salvar operador</button>
+      <p class="hint hidden" id="s-contador-hint">Para contar quantas pessoas usam o app, ele envia só seu nome, seu setor e as datas de uso. Lançamentos, OS, veículos e valores nunca saem deste aparelho.</p>
+    </div>
+    <div class="card" id="acesso-card">
+      <h2>Acesso</h2>
+      <div id="acesso-corpo"></div>
+    </div>
+    <div class="card">
+      <h2>Backup</h2>
+      <p class="hint"><b>Exportar backup</b> gera uma cópia de todos os seus lançamentos num arquivo. Salve esse arquivo no OneDrive, na pasta Documentos &gt; Folha Zero. Faça isso toda semana ou ao fechar a quinzena.</p>
+      <p class="hint"><b>Importar backup</b> só é usado se você trocar de celular, limpar o navegador ou perder os dados: escolha o arquivo salvo no OneDrive e o app volta como estava.</p>
+      <p id="s-backup-info" class="hint"></p>
+      <div class="actions">
+        <button type="button" class="btn primary big" id="btn-exportar">Exportar backup</button>
+        <button type="button" class="btn ghost big" id="btn-importar">Importar backup</button>
+        <input type="file" id="file-import" accept="application/json,.json" class="hidden">
+      </div>
+      <p class="hint">No celular, "Exportar backup" abre o compartilhamento: escolha o app do OneDrive. Salve em OneDrive &gt; Documentos &gt; Folha Zero. O arquivo tem sempre o mesmo nome (folha-zero-backup.json) e substitui o anterior.</p>
+      <p class="hint" id="s-nuvem-info">A cópia online ainda não está ligada. Os lançamentos continuam somente neste aparelho. Uma falha de rede não apaga o que já está salvo.</p>
+    </div>
+    <div class="card">
+      <h2>Dados do aplicativo</h2>
+      <p class="hint" id="s-dados-info"></p>
+      <div class="actions">
+        <button type="button" class="btn ghost big" id="btn-exemplo">Carregar exemplo</button>
+        <button type="button" class="btn danger big" id="btn-limpar">Limpar dados</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Sobre</h2>
+      <p class="hint">Folha Zero versão 20. Os lançamentos continuam salvos somente neste aparelho. A cópia online ainda não está ligada e não protege o que ainda não foi enviado. Faça backup com frequência.</p>
+    </div>
+  </section>
+
+  <!-- RELATÓRIOS -->
+  <section id="view-relatorios" class="view">
+    <div class="seg" role="tablist">
+      <button type="button" id="r-tab-valores" class="active" role="tab" aria-selected="true">Valores</button>
+      <button type="button" id="r-tab-mes" role="tab" aria-selected="false">Relatório do mês</button>
+    </div>
+    <div id="r-sec-valores">
+    <div class="card">
+      <h2>Relatórios</h2>
+      <label>Agrupar por<select id="r-grp"><option value="quinzena">Quinzena</option><option value="mes">Mês</option><option value="empresa">Empresa</option><option value="setor">Setor</option></select></label>
+      <label>Empresa<select id="r-empresa"></select></label>
+      <p class="hint">Considera só carros finalizados, pela data término. O valor aparece só no app.</p>
+    </div>
+    <div class="summary" id="r-resumo"></div>
+    <div id="r-out"></div>
+    </div>
+    <div id="r-sec-mes" class="hidden">
+      <div class="card">
+        <h2>Relatório do mês</h2>
+        <div class="row2">
+          <label>Mês<select id="rm-mes"></select></label>
+          <label>Ano<select id="rm-ano"></select></label>
+        </div>
+        <label>Empresa<select id="rm-empresa"></select></label>
+        <p class="hint">Carros finalizados no mês pela data término. Tempo de cada carro = data término menos data início (com as horas, quando preenchidas).</p>
+        <button type="button" class="btn primary big" id="rm-pdf">Baixar relatório em PDF</button>
+      </div>
+      <div id="rm-out"></div>
+    </div>
+  </section>
+</main>
+<div id="print-all"></div>
+
+<nav class="tabbar no-print">
+  <button data-view="painel" class="active"><span class="ic">⌂</span>Início</button>
+  <button data-view="lancar"><span class="ic">＋</span>Lançar</button>
+  <button data-view="lista"><span class="ic">☰</span>Lista</button>
+  <button data-view="folha"><span class="ic">⎙</span>Folha</button>
+  <button data-view="ajustes"><span class="ic">▤</span>Empresas</button>
+  <button data-view="relatorios"><span class="ic">▥</span>Relatórios</button>
+</nav>
+
+<div id="modal" class="modal hidden no-print" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <h3 id="m-title"></h3>
+    <div id="m-body"></div>
+    <div class="actions" id="m-actions"></div>
+  </div>
+</div>
+<div id="qr-modal" class="qr-modal hidden no-print" role="dialog" aria-modal="true" aria-label="Ler QR code da OS">
+  <video id="qr-video" playsinline muted autoplay></video>
+  <div class="qr-frame" aria-hidden="true"></div>
+  <div class="qr-panel">
+    <p id="qr-msg">Aponte a câmera para o QR code da ficha do veículo.</p>
+    <div class="actions">
+      <button type="button" class="btn ghost big hidden" id="qr-digitar">Digitar a OS</button>
+      <button type="button" class="btn danger big" id="qr-cancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast hidden no-print"></div>
+<button type="button" id="upd-banner" class="upd-banner hidden no-print">Nova versão pronta, toque para atualizar</button>
+<script>globalThis.FOLHA_ZERO_MODO_TESTE = true;</script>
+<script src="modo-teste.js"></script>
+<script src="persistencia.js"></script>
+<script src="acesso.js"></script>
+<script src="app.js"></script>
+<script type="module" src="app-teste-painel.bundle.js"></script>
+</body>
+</html>

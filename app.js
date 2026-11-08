@@ -19,7 +19,8 @@ const DT_RE = /^\d{4}-\d\d-\d\dT([01]\d|2[0-3]):[0-5]\d$/; // data e hora local 
 const APP_VERSAO = 20;
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const LINHAS_POR_PAGINA = 16;
-const KEY = 'folhazero_v1';
+const MODO_TESTE = globalThis.FOLHA_ZERO_MODO_TESTE === true;
+const KEY = MODO_TESTE ? 'folhazero_teste_app' : 'folhazero_v1';
 const RENOMEAR = { 'VRL Blindados': 'VRZ Blindados' }; // nomes antigos de empresas
 /* Contador de usuários: URL do Web App do Google Apps Script (termina em /exec). Vazio = contador desligado. */
 const CONTADOR_URL = 'https://script.google.com/macros/s/AKfycbx21D_MJeizj4ipu3w9XsjFJB2sSnwH5JQvYF81qvSkpjiigRsHIOUs6DeZXIN68v5E9w/exec';
@@ -1001,9 +1002,9 @@ $('#fo-fechar').onclick = () => fecharQuinzena(+$('#fo-ano').value, +$('#fo-mes'
 function renderAcesso() {
   const box = $('#acesso-corpo');
   if (!box || !window.FolhaAcesso) return;
-  const antes = localStorage.getItem('folhazero_v1');
+  const antes = MODO_TESTE ? null : localStorage.getItem('folhazero_v1');
   box.innerHTML = FolhaAcesso.htmlSecao(window, localStorage);
-  if (localStorage.getItem('folhazero_v1') !== antes) console.error('acesso alterou folhazero_v1');
+  if (!MODO_TESTE && localStorage.getItem('folhazero_v1') !== antes) console.error('acesso alterou folhazero_v1');
 }
 function copiaOnlineLigada() {
   try { return !!(window.FolhaPersistencia && FolhaPersistencia.configHabilitada(window)); }
@@ -1029,9 +1030,9 @@ $('#btn-salvar-op').onclick = () => { const v = $('#s-operador').value.trim(); i
 $('#acesso-card').addEventListener('click', ev => {
   const btn = ev.target.closest('[data-acesso]');
   if (!btn || !window.FolhaAcesso) return;
-  const antes = localStorage.getItem('folhazero_v1');
+  const antes = MODO_TESTE ? null : localStorage.getItem('folhazero_v1');
   const r = FolhaAcesso.clicar(window, localStorage, btn.getAttribute('data-acesso'), btn.getAttribute('data-id') || '');
-  if (localStorage.getItem('folhazero_v1') !== antes) localStorage.setItem('folhazero_v1', antes);
+  if (!MODO_TESTE && localStorage.getItem('folhazero_v1') !== antes) localStorage.setItem('folhazero_v1', antes);
   const msg = $('#acesso-msg');
   if (msg && r && r.texto) msg.textContent = r.texto;
   renderAcesso();
@@ -1477,6 +1478,7 @@ function contadorPayload(tipo, id) {
     inicioDegustacao: ini ? String(ini).slice(0, 10) : null };
 }
 async function contadorPost(body) {
+  if (MODO_TESTE) return false;
   const opts = { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, cache: 'no-store', credentials: 'omit', redirect: 'follow' };
   const comPrazo = (o, ms) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms); return fetch(CONTADOR_URL, Object.assign({}, o, { signal: c.signal })).finally(() => clearTimeout(t)); };
   try { const r = await comPrazo(opts, 15000); return r.ok; }
@@ -1488,7 +1490,7 @@ async function contadorPost(body) {
 }
 let contadorOcupado = false;
 async function contadorAbertura() {
-  if (!CONTADOR_URL || contadorOcupado || !DB.settings.operador) return;
+  if (MODO_TESTE || !CONTADOR_URL || contadorOcupado || !DB.settings.operador) return;
   contadorOcupado = true;
   try {
     const s = contadorEstado(), id = contadorId(s), hoje = hojeISO();
@@ -1533,7 +1535,7 @@ function aoTrocarControlador() {
 }
 $('#upd-banner').onclick = () => aplicarAtualizacao(true);
 let TINHA_CONTROLE = false;
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+if (!MODO_TESTE && 'serviceWorker' in navigator && location.protocol !== 'file:') {
   TINHA_CONTROLE = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', aoTrocarControlador);
   navigator.serviceWorker.register('sw.js').then(reg => {

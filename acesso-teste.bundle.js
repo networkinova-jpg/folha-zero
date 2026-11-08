@@ -141,7 +141,9 @@ var require_fixture_teste = __commonJS({
       const SUPERFICIE = "copias_fixture_teste";
       const MAX_COPIAS = 1;
       const SHA256_CANON = "57228492711d49c94d20903583163d3241c7861859d12164a5fdc8ac97b2e365";
-      const PAGINA_NUVEM = "https://wild-voice-4f08.folha-zero-networkinova.workers.dev/acesso-teste";
+      const HOST_TESTE = "wild-voice-4f08.folha-zero-networkinova.workers.dev";
+      const PAGINA_NUVEM = "https://" + HOST_TESTE + "/acesso-teste";
+      const PAGINA_APP = "https://" + HOST_TESTE + "/app-teste";
       function gerarConjunto() {
         return {
           version: 2,
@@ -256,7 +258,10 @@ var require_fixture_teste = __commonJS({
         try {
           const u = new URL(location2.href);
           if (u.hostname === "networkinova-jpg.github.io") return { ok: false, motivo: "origem_producao" };
-          if (u.protocol !== "https:" || u.origin + u.pathname !== PAGINA_NUVEM) return { ok: false, motivo: "origem_nao_autorizada" };
+          const aqui = u.origin + u.pathname;
+          if (u.protocol !== "https:" || u.hostname !== HOST_TESTE || aqui !== PAGINA_NUVEM && aqui !== PAGINA_APP) {
+            return { ok: false, motivo: "origem_nao_autorizada" };
+          }
           return { ok: true };
         } catch (_) {
           return { ok: false, motivo: "origem_nao_autorizada" };
@@ -323,7 +328,9 @@ var require_fixture_teste = __commonJS({
         SUPERFICIE,
         MAX_COPIAS,
         SHA256_CANON,
+        HOST_TESTE,
         PAGINA_NUVEM,
+        PAGINA_APP,
         paginaPermitida,
         planejarEnvio,
         enviarComCliente,
