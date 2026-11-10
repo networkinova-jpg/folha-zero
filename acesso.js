@@ -182,7 +182,6 @@
         <button type="button" class="btn ghost" data-acesso="google"${desab}>Entrar com Google</button>
       </form>
       <p class="hint" id="acesso-msg"></p>
-      <p class="hint"><a href="acesso-teste.html">Abrir a tela de teste de acesso</a>. Ela não obriga login de quem já usa o app e não envia lançamentos sozinha.</p>
       ${painel}`;
   }
 

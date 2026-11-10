@@ -22,4 +22,8 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrati
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261108010000_backups_teste_app.sql"
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/test/sql/backups-teste.sql"
 bash "${raiz}/test/sql/concorrencia-backup.sh" "${db}" "${raiz}"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261108020000_copias_conta.sql"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261108020000_copias_conta.sql"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/test/sql/copias-conta.sql"
+bash "${raiz}/test/sql/concorrencia-conta.sh" "${db}"
 echo "sql ok ${db}"

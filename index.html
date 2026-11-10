@@ -184,7 +184,8 @@
         <input type="file" id="file-import" accept="application/json,.json" class="hidden">
       </div>
       <p class="hint">No celular, "Exportar backup" abre o compartilhamento: escolha o app do OneDrive. Salve em OneDrive &gt; Documentos &gt; Folha Zero. O arquivo tem sempre o mesmo nome (folha-zero-backup.json) e substitui o anterior.</p>
-      <p class="hint" id="s-nuvem-info">A cópia online ainda não está ligada. Os lançamentos continuam somente neste aparelho. Uma falha de rede não apaga o que já está salvo.</p>
+      <p class="hint" id="s-nuvem-info">O uso local não pede login. A cópia na conta é opcional e só começa depois da associação explícita.</p>
+      <div id="copia-conta"></div>
     </div>
     <div class="card">
       <h2>Dados do aplicativo</h2>
@@ -266,5 +267,6 @@
 <script src="persistencia.js"></script>
 <script src="acesso.js"></script>
 <script src="app.js"></script>
+<script type="module" src="copia-conta.bundle.js"></script>
 </body>
 </html>

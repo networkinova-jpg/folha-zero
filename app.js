@@ -104,9 +104,9 @@ function migrarNomes(d) {
 function save() {
   DB.entries.forEach(normEntry);
   localStorage.setItem(KEY, JSON.stringify(DB));
-  if (MODO_TESTE) {
-    try { window.dispatchEvent(new CustomEvent('folha-teste-gravou')); } catch (_) {}
-  }
+  try {
+    window.dispatchEvent(new CustomEvent(MODO_TESTE ? 'folha-teste-gravou' : 'folha-conta-gravou'));
+  } catch (_) {}
 }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
