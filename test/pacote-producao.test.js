@@ -46,7 +46,7 @@ test('cada arquivo do service worker já está no site publicado ou entra no pac
   assert.equal(obrigatorios.has('persistencia.js'), false);
   assert.equal(obrigatorios.has('folha-zero-config.js'), false);
   assert.equal(obrigatorios.has('styles.css'), false);
-  assert.equal(obrigatorios.has('sw.js'), false);
+  assert.equal(obrigatorios.get('sw.js'), 'restaurar');
   assert.equal(obrigatorios.has('manifest.webmanifest'), false);
   assert.equal(obrigatorios.has('icons/icon-192.png'), false);
   assert.equal(obrigatorios.has('icons/icon-512.png'), false);
