@@ -537,6 +537,18 @@ var require_copia_conta = __commonJS({
         storage.setItem(KEY, texto);
         return { ok: true, escreveu: true, texto };
       }
+      function pedirAssociacao(perguntar) {
+        if (typeof perguntar !== "function") return false;
+        return perguntar(TEXTO_CONSENTIMENTO) === true;
+      }
+      function pedirTroca(perguntar) {
+        if (typeof perguntar !== "function") return false;
+        return perguntar("Trocar a conta associada a estes lan\xE7amentos?\n\nA conta Google desta sess\xE3o passa a receber as c\xF3pias novas deste aparelho. A conta anterior deixa de receb\xEA-las. Os lan\xE7amentos deste aparelho n\xE3o s\xE3o apagados.\n\n" + TEXTO_CONSENTIMENTO) === true;
+      }
+      function textoNuvem(associada) {
+        if (associada) return "A c\xF3pia na conta est\xE1 ligada neste aparelho. Ela envia os lan\xE7amentos da conta associada e n\xE3o substitui outra revis\xE3o sozinha.";
+        return "A c\xF3pia na conta est\xE1 desligada neste aparelho. O uso local n\xE3o pede login. Ela s\xF3 come\xE7a depois que voc\xEA associar a conta.";
+      }
       function textoEstado(fila) {
         const estado = fila && fila.estado;
         if (estado === "pendente") return "Salvo neste aparelho. Envio da c\xF3pia da conta pendente.";
@@ -584,6 +596,9 @@ var require_copia_conta = __commonJS({
         enviarDaBase,
         rodarFila,
         restaurar,
+        pedirAssociacao,
+        pedirTroca,
+        textoNuvem,
         textoEstado
       };
       root.FolhaCopiaConta = api;
@@ -21509,13 +21524,13 @@ if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and b
 // copia-conta-pagina.js
 var import_login_google = __toESM(require_login_google());
 var import_copia_conta = __toESM(require_copia_conta());
-import { FOLHA_ZERO_TESTE } from "./acesso-teste-config.js";
+import { FOLHA_ZERO_CONFIG } from "./folha-zero-config.js";
 var C = globalThis.FolhaCopiaConta;
 var L = globalThis.FolhaLoginGoogle;
 var caixa = document.getElementById("copia-conta");
 if (caixa && C && L) {
   let cliente = function() {
-    const cfg = FOLHA_ZERO_TESTE || {};
+    const cfg = FOLHA_ZERO_CONFIG || {};
     if (!cfg.url || !String(cfg.publishableKey || "").startsWith("sb_publishable_")) return null;
     return createClient(cfg.url, cfg.publishableKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" }
@@ -21594,6 +21609,10 @@ if (caixa && C && L) {
   document.getElementById("btn-copia-associar").addEventListener("click", async () => {
     const atual = await sessao();
     if (!atual || !atual.user) return;
+    if (!C.pedirAssociacao((mensagem) => window.confirm(mensagem))) {
+      texto("A associa\xE7\xE3o n\xE3o foi confirmada. Nada foi enviado.");
+      return;
+    }
     const r = C.associar(localStorage, atual.user.id, true, false);
     texto(r.ok ? "Conta associada a estes lan\xE7amentos. O envio usa a revis\xE3o que este aparelho passar a conhecer." : "Esta sess\xE3o n\xE3o \xE9 a conta j\xE1 associada. Nada foi enviado.");
     if (!r.ok) return;
@@ -21604,6 +21623,10 @@ if (caixa && C && L) {
   document.getElementById("btn-copia-trocar").addEventListener("click", async () => {
     const atual = await sessao();
     if (!atual || !atual.user) return;
+    if (!C.pedirTroca((mensagem) => window.confirm(mensagem))) {
+      texto("A troca n\xE3o foi confirmada. Nada foi enviado.");
+      return;
+    }
     const r = C.associar(localStorage, atual.user.id, true, true);
     if (!r.ok) {
       texto("A troca n\xE3o foi feita. Os lan\xE7amentos continuam neste aparelho.");

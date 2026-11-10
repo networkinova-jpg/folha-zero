@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { FOLHA_ZERO_TESTE } from './acesso-teste-config.js';
+import { FOLHA_ZERO_CONFIG } from './folha-zero-config.js';
 import './login-google.js';
 import './copia-conta.js';
 
@@ -23,7 +23,7 @@ if (caixa && C && L) {
   let espera = 0;
 
   function cliente() {
-    const cfg = FOLHA_ZERO_TESTE || {};
+    const cfg = FOLHA_ZERO_CONFIG || {};
     if (!cfg.url || !String(cfg.publishableKey || '').startsWith('sb_publishable_')) return null;
     return createClient(cfg.url, cfg.publishableKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' }
@@ -86,6 +86,10 @@ if (caixa && C && L) {
   document.getElementById('btn-copia-associar').addEventListener('click', async () => {
     const atual = await sessao();
     if (!atual || !atual.user) return;
+    if (!C.pedirAssociacao((mensagem) => window.confirm(mensagem))) {
+      texto('A associação não foi confirmada. Nada foi enviado.');
+      return;
+    }
     const r = C.associar(localStorage, atual.user.id, true, false);
     texto(r.ok
       ? 'Conta associada a estes lançamentos. O envio usa a revisão que este aparelho passar a conhecer.'
@@ -98,6 +102,10 @@ if (caixa && C && L) {
   document.getElementById('btn-copia-trocar').addEventListener('click', async () => {
     const atual = await sessao();
     if (!atual || !atual.user) return;
+    if (!C.pedirTroca((mensagem) => window.confirm(mensagem))) {
+      texto('A troca não foi confirmada. Nada foi enviado.');
+      return;
+    }
     const r = C.associar(localStorage, atual.user.id, true, true);
     if (!r.ok) { texto('A troca não foi feita. Os lançamentos continuam neste aparelho.'); return; }
     C.anotarMudanca(localStorage, atual.user.id);

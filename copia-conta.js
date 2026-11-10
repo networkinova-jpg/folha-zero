@@ -380,6 +380,21 @@
     return { ok: true, escreveu: true, texto };
   }
 
+  function pedirAssociacao(perguntar) {
+    if (typeof perguntar !== 'function') return false;
+    return perguntar(TEXTO_CONSENTIMENTO) === true;
+  }
+
+  function pedirTroca(perguntar) {
+    if (typeof perguntar !== 'function') return false;
+    return perguntar('Trocar a conta associada a estes lançamentos?\n\nA conta Google desta sessão passa a receber as cópias novas deste aparelho. A conta anterior deixa de recebê-las. Os lançamentos deste aparelho não são apagados.\n\n' + TEXTO_CONSENTIMENTO) === true;
+  }
+
+  function textoNuvem(associada) {
+    if (associada) return 'A cópia na conta está ligada neste aparelho. Ela envia os lançamentos da conta associada e não substitui outra revisão sozinha.';
+    return 'A cópia na conta está desligada neste aparelho. O uso local não pede login. Ela só começa depois que você associar a conta.';
+  }
+
   function textoEstado(fila) {
     const estado = fila && fila.estado;
     if (estado === 'pendente') return 'Salvo neste aparelho. Envio da cópia da conta pendente.';
@@ -399,7 +414,7 @@
     LIMITE_BYTES, LIMITE_LANCAMENTOS, LIMITE_REVISAO, LIMITE_PAUSAS, TEXTO_CONSENTIMENTO,
     MENSAGEM_CONFLITO, MENSAGEM_SEM_BASE, MENSAGEM_AMBIGUO, MENSAGEM_GRANDE, MENSAGEM_REVISAO,
     aceitaEnvio, lerDocumento, guardarBruto, associar, podeEnviar, lerBase, gravarBase,
-    anotarMudanca, retomarFila, lerFila, registrarCopiaAceita, enviar, enviarDaBase, rodarFila, restaurar, textoEstado
+    anotarMudanca, retomarFila, lerFila, registrarCopiaAceita, enviar, enviarDaBase, rodarFila, restaurar, pedirAssociacao, pedirTroca, textoNuvem, textoEstado
   };
   root.FolhaCopiaConta = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
