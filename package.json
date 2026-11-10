@@ -2,7 +2,7 @@
   "name": "folha-zero",
   "private": true,
   "scripts": {
-    "test": "node --test test/persistencia.test.js test/politica.test.js test/escopo.test.js test/proprietario.test.js test/snapshot-remoto.test.js test/relatorio.test.js test/sql.test.js test/conexao-publica.test.js test/login-google.test.js test/fixture-teste.test.js test/modo-teste.test.js test/backup-teste.test.js test/copia-conta.test.js"
+    "test": "node --test test/persistencia.test.js test/politica.test.js test/escopo.test.js test/proprietario.test.js test/snapshot-remoto.test.js test/relatorio.test.js test/sql.test.js test/conexao-publica.test.js test/login-google.test.js test/fixture-teste.test.js test/modo-teste.test.js test/backup-teste.test.js test/copia-conta.test.js test/pacote-producao.test.js"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.119.0",

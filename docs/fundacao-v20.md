@@ -58,7 +58,7 @@ Não força login no aplicativo do dia a dia, não cria conta, não envia cópia
 
 ## Testes executados
 
-`npm test`: 65 testes, todos passando. Um sobe um Postgres local, aplica a base duas vezes, a cópia privada e a proteção da fixture duas vezes. Os ataques incluem negativos aninhados e oito sessões simultâneas da mesma conta. Nada disso foi aplicado no projeto remoto. Nenhuma conta foi criada.
+`npm test`: 67 testes, todos passando. Um sobe um Postgres local, aplica a base duas vezes, a cópia privada e a proteção da fixture duas vezes. Os ataques incluem negativos aninhados e oito sessões simultâneas da mesma conta. Nada disso foi aplicado no projeto remoto. Nenhuma conta foi criada.
 
 - Backup idempotente, quota, prévia, confirmação, cópia inválida e aborto da restauração.
 - Conta vazia, mescla sem duplicar id, troca de usuário, logout, ack parcial e ack divergente.

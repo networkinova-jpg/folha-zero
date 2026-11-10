@@ -174,6 +174,50 @@ test('resposta perdida, edição durante o envio e conta trocada', async () => {
   assert.equal(storage.getItem(conta.KEY), JSON.stringify(novo));
 });
 
+test('o aviso acompanha a associação e os diálogos vêm antes do envio', () => {
+  const { JSDOM } = require('jsdom');
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const pagina = fs.readFileSync(path.join(__dirname, '..', 'copia-conta-pagina.js'), 'utf8');
+  const pacote = fs.readFileSync(path.join(__dirname, '..', 'copia-conta.bundle.js'), 'utf8');
+  assert.equal(html.includes('A cópia online ainda não está ligada'), false);
+  assert.equal(fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').includes('A cópia online ainda não está ligada'), false);
+  assert.equal(conta.textoNuvem(false).includes('desligada'), true);
+  assert.equal(conta.textoNuvem(true).includes('ligada neste aparelho'), true);
+  assert.equal(conta.pedirAssociacao(() => false), false);
+  assert.equal(conta.pedirAssociacao((mensagem) => mensagem === conta.TEXTO_CONSENTIMENTO), true);
+  assert.equal(conta.pedirTroca(() => false), false);
+  const troca = [];
+  assert.equal(conta.pedirTroca((mensagem) => { troca.push(mensagem); return true; }), true);
+  assert.equal(troca[0].includes('Trocar a conta associada'), true);
+  assert.equal(troca[0].includes(conta.TEXTO_CONSENTIMENTO), true);
+  assert.equal(troca[0].includes('não são apagados'), true);
+  const associar = pagina.slice(pagina.indexOf("getElementById('btn-copia-associar').addEventListener"));
+  const trocar = pagina.slice(pagina.indexOf("getElementById('btn-copia-trocar').addEventListener"));
+  assert.equal(associar.indexOf('pedirAssociacao') < associar.indexOf('C.associar'), true);
+  assert.equal(associar.indexOf('Nada foi enviado.') < associar.indexOf('C.associar'), true);
+  assert.equal(trocar.indexOf('pedirTroca') < trocar.indexOf('C.associar'), true);
+  assert.equal(trocar.indexOf('Nada foi enviado.') < trocar.indexOf('C.associar'), true);
+  assert.equal(pacote.includes('acesso-teste-config'), false);
+  assert.equal(pacote.includes('FOLHA_ZERO_TESTE'), false);
+  assert.equal(pacote.includes('folha-zero-config.js'), true);
+  const dom = new JSDOM(html, { url: 'http://127.0.0.1:8765/index.html', runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window;
+  w.scrollTo = () => {};
+  w.fetch = async () => { throw new Error('rede bloqueada no teste'); };
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').replace(
+    /const CONTADOR_URL = '[^']*';/,
+    "const CONTADOR_URL = '';"
+  );
+  w.eval(src);
+  w.document.querySelector('[data-view="ajustes"]').click();
+  assert.equal(w.document.getElementById('s-nuvem-info').textContent, conta.textoNuvem(false));
+  assert.equal(w.document.getElementById('s-sobre-copia').textContent.includes(conta.textoNuvem(false)), true);
+  w.localStorage.setItem('folhazero_conta_vinculo', 'conta-a');
+  w.document.querySelector('[data-view="ajustes"]').click();
+  assert.equal(w.document.getElementById('s-nuvem-info').textContent, conta.textoNuvem(true));
+  assert.equal(w.document.getElementById('s-sobre-copia').textContent.includes('desligada'), false);
+});
+
 test('o service worker novo não apaga a base e a produção não mistura o teste', () => {
   const sw = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
   const index = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -184,6 +228,8 @@ test('o service worker novo não apaga a base e a produção não mistura o test
   assert.equal(index.includes('FOLHA_ZERO_MODO_TESTE'), false);
   assert.equal(index.includes('btn-backup-variavel'), false);
   assert.equal(index.includes('copia-conta.bundle.js'), true);
+  assert.equal(sw.includes('folha-zero-config.js'), true);
+  assert.equal(sw.includes('acesso-teste-config.js'), false);
   assert.equal(teste.includes('copia-conta.bundle.js'), false);
   assert.equal(login.podeIniciarGoogle(new URL('https://networkinova-jpg.github.io/folha-zero/')).motivo, 'origem_producao');
   assert.equal(login.podeIniciarGoogleProducao(new URL('https://networkinova-jpg.github.io/folha-zero/')).ok, true);
