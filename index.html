@@ -169,6 +169,10 @@
       <button type="button" class="btn primary" id="btn-salvar-op">Salvar operador</button>
       <p class="hint hidden" id="s-contador-hint">Para contar quantas pessoas usam o app, ele envia só seu nome, seu setor e as datas de uso. Lançamentos, OS, veículos e valores nunca saem deste aparelho.</p>
     </div>
+    <div class="card" id="acesso-card">
+      <h2>Acesso</h2>
+      <div id="acesso-corpo"></div>
+    </div>
     <div class="card">
       <h2>Backup</h2>
       <p class="hint"><b>Exportar backup</b> gera uma cópia de todos os seus lançamentos num arquivo. Salve esse arquivo no OneDrive, na pasta Documentos &gt; Folha Zero. Faça isso toda semana ou ao fechar a quinzena.</p>
@@ -180,6 +184,8 @@
         <input type="file" id="file-import" accept="application/json,.json" class="hidden">
       </div>
       <p class="hint">No celular, "Exportar backup" abre o compartilhamento: escolha o app do OneDrive. Salve em OneDrive &gt; Documentos &gt; Folha Zero. O arquivo tem sempre o mesmo nome (folha-zero-backup.json) e substitui o anterior.</p>
+      <p class="hint" id="s-nuvem-info">A cópia na conta está desligada neste aparelho. O uso local não pede login. Ela só começa depois que você associar a conta.</p>
+      <div id="copia-conta"></div>
     </div>
     <div class="card">
       <h2>Dados do aplicativo</h2>
@@ -191,7 +197,7 @@
     </div>
     <div class="card">
       <h2>Sobre</h2>
-      <p class="hint">Folha Zero versão 19. Os dados ficam salvos somente neste aparelho. Faça backup com frequência.</p>
+      <p class="hint" id="s-sobre-copia">Folha Zero versão 20. Os lançamentos continuam salvos neste aparelho. A cópia na conta está desligada neste aparelho. O uso local não pede login. Ela só começa depois que você associar a conta. Ela não protege o que ainda não foi enviado. Faça backup com frequência.</p>
     </div>
   </section>
 
@@ -258,6 +264,9 @@
 <div id="toast" class="toast hidden no-print"></div>
 <button type="button" id="upd-banner" class="upd-banner hidden no-print">Nova versão pronta, toque para atualizar</button>
 <script src="vendor/jspdf.umd.min.js"></script>
+<script src="persistencia.js"></script>
+<script src="acesso.js"></script>
 <script src="app.js"></script>
+<script type="module" src="copia-conta.bundle.js"></script>
 </body>
 </html>
