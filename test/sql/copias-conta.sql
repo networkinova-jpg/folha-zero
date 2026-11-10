@@ -56,6 +56,7 @@ insert into doc_real (documento) values ($fx$
   "settings": {"operador": "Pessoa Exemplo", "setorOperador": "Tapeçaria", "lastBackup": null}
 }
 $fx$::jsonb);
+grant select on doc_real to authenticated;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', false);
@@ -73,7 +74,7 @@ end $$;
 
 do $$
 begin
-  perform public.copia_conta_gravar(1, '{"version":2,"entries":[]}'::jsonb);
+  perform public.copia_conta_gravar(9, '{"version":2,"entries":[]}'::jsonb);
   raise exception 'ataque passou: revisao velha';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
