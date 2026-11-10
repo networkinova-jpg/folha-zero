@@ -391,8 +391,8 @@
   }
 
   function textoNuvem(associada) {
-    if (associada) return 'A cópia na conta está ligada neste aparelho. Ela envia os lançamentos da conta associada e não substitui outra revisão sozinha.';
-    return 'A cópia na conta está desligada neste aparelho. O uso local não pede login. Ela só começa depois que você associar a conta.';
+    if (associada) return 'A cópia na conta está ligada. Cada lançamento salvo é enviado para a conta associada.';
+    return 'A cópia na conta está desligada.';
   }
 
   function textoEstado(fila) {

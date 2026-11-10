@@ -39,14 +39,14 @@ test('cada arquivo do service worker já está no site publicado ou entra no pac
     const igual = resposta.status === 200 && remoto.equals(local);
     if (!igual) obrigatorios.set(rel, resposta.status === 200 ? 'restaurar' : 'remover');
   }
-  assert.equal(obrigatorios.get('persistencia.js'), 'remover');
-  assert.equal(obrigatorios.get('acesso.js'), 'remover');
-  assert.equal(obrigatorios.get('copia-conta.bundle.js'), 'remover');
-  assert.equal(obrigatorios.get('folha-zero-config.js'), 'remover');
-  assert.equal(obrigatorios.get('styles.css'), 'restaurar');
+  assert.equal(obrigatorios.get('acesso.js'), 'restaurar');
   assert.equal(obrigatorios.get('app.js'), 'restaurar');
+  assert.equal(obrigatorios.get('copia-conta.bundle.js'), 'restaurar');
   assert.equal(obrigatorios.get('index.html'), 'restaurar');
-  assert.equal(obrigatorios.get('sw.js'), 'restaurar');
+  assert.equal(obrigatorios.has('persistencia.js'), false);
+  assert.equal(obrigatorios.has('folha-zero-config.js'), false);
+  assert.equal(obrigatorios.has('styles.css'), false);
+  assert.equal(obrigatorios.has('sw.js'), false);
   assert.equal(obrigatorios.has('manifest.webmanifest'), false);
   assert.equal(obrigatorios.has('icons/icon-192.png'), false);
   assert.equal(obrigatorios.has('icons/icon-512.png'), false);

@@ -8,7 +8,7 @@ const L = globalThis.FolhaLoginGoogle;
 const caixa = document.getElementById('copia-conta');
 if (caixa && C && L) {
   caixa.innerHTML = [
-    '<p class="hint">O uso local não pede login. A cópia na conta só envia os lançamentos deste aparelho depois que você associar a conta Google. Nada é restaurado sozinho.</p>',
+    '<p class="hint" id="copia-conta-intro">O uso local não pede login. Nada é restaurado sozinho.</p>',
     '<p id="st-copia-conta" class="hint"></p>',
     '<div class="actions">',
     '<button type="button" class="btn ghost" id="btn-copia-google">Entrar com Google nesta página</button>',
@@ -53,6 +53,8 @@ if (caixa && C && L) {
     if (associar) associar.disabled = !(atual && atual.user) || outra;
     if (trocar) trocar.hidden = !outra;
     if (previa) previa.disabled = !(atual && atual.user && uid === atual.user.id);
+    const aviso = document.getElementById('s-nuvem-info');
+    if (aviso) aviso.textContent = C.textoNuvem(!!uid);
     if (uid && atual && atual.user) texto(C.textoEstado(C.lerFila(localStorage, atual.user.id)));
     else if (!origemOk()) texto('Esta página só envia a cópia da conta no endereço publicado do aplicativo. Os lançamentos continuam neste aparelho.');
     else texto(C.textoEstado(null));

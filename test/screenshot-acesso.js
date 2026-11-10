@@ -46,7 +46,7 @@ function servir() {
   await page.locator('#acesso-card').scrollIntoViewIfNeeded();
   await page.waitForTimeout(700);
   const aviso = await page.textContent('#acesso-aviso');
-  if (!/desligado/.test(aviso)) throw new Error('aviso inesperado: ' + aviso);
+  if (!/cartão Backup/.test(aviso)) throw new Error('aviso inesperado: ' + aviso);
   await page.locator('#acesso-card').screenshot({ path: '/opt/cursor/artifacts/folha-zero-acesso-desligado-mobile.png' });
   await page.evaluate(() => {
     const meta = FolhaAcesso.lerMeta(localStorage);

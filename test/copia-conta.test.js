@@ -181,8 +181,14 @@ test('o aviso acompanha a associação e os diálogos vêm antes do envio', () =
   const pacote = fs.readFileSync(path.join(__dirname, '..', 'copia-conta.bundle.js'), 'utf8');
   assert.equal(html.includes('A cópia online ainda não está ligada'), false);
   assert.equal(fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8').includes('A cópia online ainda não está ligada'), false);
-  assert.equal(conta.textoNuvem(false).includes('desligada'), true);
-  assert.equal(conta.textoNuvem(true).includes('ligada neste aparelho'), true);
+  assert.equal(conta.textoNuvem(false), 'A cópia na conta está desligada.');
+  assert.equal(conta.textoNuvem(false).includes('O uso local não pede login'), false);
+  assert.equal(conta.textoNuvem(true), 'A cópia na conta está ligada. Cada lançamento salvo é enviado para a conta associada.');
+  assert.equal(pagina.includes('id="copia-conta-intro"'), true);
+  assert.equal((pagina.match(/O uso local não pede login/g) || []).length, 1);
+  const pintar = pagina.slice(pagina.indexOf('async function pintar'), pagina.indexOf('async function enviar'));
+  assert.equal(pintar.includes("getElementById('s-nuvem-info')"), true);
+  assert.equal(pintar.includes('C.textoNuvem(!!uid)'), true);
   assert.equal(conta.pedirAssociacao(() => false), false);
   assert.equal(conta.pedirAssociacao((mensagem) => mensagem === conta.TEXTO_CONSENTIMENTO), true);
   assert.equal(conta.pedirTroca(() => false), false);
