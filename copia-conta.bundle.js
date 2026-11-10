@@ -546,8 +546,8 @@ var require_copia_conta = __commonJS({
         return perguntar("Trocar a conta associada a estes lan\xE7amentos?\n\nA conta Google desta sess\xE3o passa a receber as c\xF3pias novas deste aparelho. A conta anterior deixa de receb\xEA-las. Os lan\xE7amentos deste aparelho n\xE3o s\xE3o apagados.\n\n" + TEXTO_CONSENTIMENTO) === true;
       }
       function textoNuvem(associada) {
-        if (associada) return "A c\xF3pia na conta est\xE1 ligada neste aparelho. Ela envia os lan\xE7amentos da conta associada e n\xE3o substitui outra revis\xE3o sozinha.";
-        return "A c\xF3pia na conta est\xE1 desligada neste aparelho. O uso local n\xE3o pede login. Ela s\xF3 come\xE7a depois que voc\xEA associar a conta.";
+        if (associada) return "A c\xF3pia na conta est\xE1 ligada. Cada lan\xE7amento salvo \xE9 enviado para a conta associada.";
+        return "A c\xF3pia na conta est\xE1 desligada.";
       }
       function textoEstado(fila) {
         const estado = fila && fila.estado;
@@ -21539,7 +21539,7 @@ if (caixa && C && L) {
     return L.podeIniciarGoogleProducao(window.location).ok;
   };
   caixa.innerHTML = [
-    '<p class="hint">O uso local n\xE3o pede login. A c\xF3pia na conta s\xF3 envia os lan\xE7amentos deste aparelho depois que voc\xEA associar a conta Google. Nada \xE9 restaurado sozinho.</p>',
+    '<p class="hint" id="copia-conta-intro">O uso local n\xE3o pede login. Nada \xE9 restaurado sozinho.</p>',
     '<p id="st-copia-conta" class="hint"></p>',
     '<div class="actions">',
     '<button type="button" class="btn ghost" id="btn-copia-google">Entrar com Google nesta p\xE1gina</button>',
@@ -21573,6 +21573,8 @@ if (caixa && C && L) {
     if (associar) associar.disabled = !(atual && atual.user) || outra;
     if (trocar) trocar.hidden = !outra;
     if (previa) previa.disabled = !(atual && atual.user && uid === atual.user.id);
+    const aviso = document.getElementById("s-nuvem-info");
+    if (aviso) aviso.textContent = C.textoNuvem(!!uid);
     if (uid && atual && atual.user) texto(C.textoEstado(C.lerFila(localStorage, atual.user.id)));
     else if (!origemOk()) texto("Esta p\xE1gina s\xF3 envia a c\xF3pia da conta no endere\xE7o publicado do aplicativo. Os lan\xE7amentos continuam neste aparelho.");
     else texto(C.textoEstado(null));

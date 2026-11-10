@@ -157,12 +157,17 @@
     const cfg = lerConfigPublica(ambiente);
     const sessao = sessaoDe(ambiente);
     const meta = lerMeta(storage);
+    const modoTeste = !!(ambiente && ambiente.FOLHA_ZERO_MODO_TESTE);
     const aviso = cfg.ligado
       ? 'A chave pública foi encontrada, mas o Google e o e-mail ainda não foram validados. Nada é enviado e a senha não fica salva aqui.'
-      : 'O login está desligado neste aplicativo. O projeto existe, mas o banco segue vazio e esta tela não está ligada a ele. Não dá para entrar com Google nem com e-mail. Seus lançamentos continuam só neste aparelho e o acesso não é obrigatório.';
+      : modoTeste
+      ? 'O login está desligado neste aplicativo de teste. Seus lançamentos de teste continuam só neste aparelho.'
+      : 'O login com Google para a cópia na conta fica no cartão Backup, mais abaixo.';
     let painel;
     if (!sessao || sessao.papel !== 'proprietario' || !ehProprietario(meta, sessao)) {
-      painel = '<p class="hint">O painel do proprietário não abre com o nome de quem usa o aparelho. Ele depende de uma sessão confirmada pelo servidor. O projeto existe, mas o banco segue vazio e este aplicativo não está ligado a ele.</p>';
+      painel = modoTeste
+        ? '<p class="hint">O painel do proprietário não abre com o nome de quem usa o aparelho. Ele depende de uma sessão confirmada pelo servidor. O projeto existe, mas o banco segue vazio e este aplicativo não está ligado a ele.</p>'
+        : '';
     } else {
       const linhas = meta.solicitacoes.length ? meta.solicitacoes.map(s => `<div class="acesso-item"><b>${esc(s.nome || 'Pessoa fictícia')}</b><span>${esc(s.email || '')}${s.orgNome ? ' · ' + esc(s.orgNome) : ''} · ${esc(s.papelPedido || '')} · ${esc(s.status || 'pendente')}</span>
         <div class="actions"><button type="button" class="btn small primary" data-acesso="aprovar" data-id="${esc(s.id)}">Aprovar</button>
@@ -174,13 +179,14 @@
         <h3>Degustação e licença</h3><div class="acesso-lista">${lics}</div>`;
     }
     const desab = cfg.ligado ? '' : ' disabled';
-    return `<p class="acesso-aviso" id="acesso-aviso">${aviso}</p>
-      <form id="acesso-form">
+    const form = (cfg.ligado || modoTeste) ? `<form id="acesso-form">
         <label>E-mail<input id="acesso-email" type="email" autocomplete="off"${desab}></label>
         <label>Senha<input id="acesso-senha" type="password" autocomplete="new-password"${desab}></label>
         <button type="submit" class="btn primary" data-acesso="email"${desab}>Entrar com e-mail</button>
         <button type="button" class="btn ghost" data-acesso="google"${desab}>Entrar com Google</button>
-      </form>
+      </form>` : '';
+    return `<p class="acesso-aviso" id="acesso-aviso">${aviso}</p>
+      ${form}
       <p class="hint" id="acesso-msg"></p>
       ${painel}`;
   }

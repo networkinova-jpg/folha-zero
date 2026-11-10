@@ -1,4 +1,4 @@
-const CACHE = 'folha-zero-v21';
+const CACHE = 'folha-zero-v22';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './persistencia.js', './acesso.js', './copia-conta.bundle.js', './folha-zero-config.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './vendor/jspdf.umd.min.js', './vendor/jsQR.js'];
 self.addEventListener('install', e => {
   // cache: 'reload' evita pegar arquivos velhos do cache HTTP ao instalar a versão nova
