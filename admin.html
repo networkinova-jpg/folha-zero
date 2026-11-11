@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folha Zero: painel do proprietário</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">FZ</span><div><strong>Painel do proprietário</strong><small>Site de teste. Não é o app do dia a dia.</small></div></div>
+</header>
+<main>
+  <section id="tela-entrada" class="card">
+    <h2>Entrada</h2>
+    <p class="hint">Entre com o Google desta conta. Não há campo de senha.</p>
+    <p id="st-entrada" class="hint"></p>
+    <button type="button" class="btn primary big" id="btn-google">Entrar com Google</button>
+  </section>
+  <p id="st-recusa" class="acesso-aviso hidden">Esta conta não é do proprietário.</p>
+  <div id="painel" class="hidden">
+    <div class="actions">
+      <button type="button" class="btn ghost" data-tela="inicio">Início</button>
+      <button type="button" class="btn ghost" data-tela="pedidos">Pedidos</button>
+      <button type="button" class="btn ghost" data-tela="avulsos">Pessoas avulsas</button>
+      <button type="button" class="btn ghost" data-tela="empresas">Empresas</button>
+      <button type="button" class="btn ghost" data-tela="convites">Convites</button>
+      <button type="button" class="btn ghost" data-tela="conta">Minha conta</button>
+    </div>
+    <section id="tela-inicio" class="card hidden">
+      <h2>Início</h2>
+      <div class="nums">
+        <div class="num"><b id="n-pedidos">0</b><span>Pedidos esperando</span></div>
+        <div class="num"><b id="n-avulsos">0</b><span>Pessoas avulsas</span></div>
+        <div class="num"><b id="n-empresas">0</b><span>Empresas</span></div>
+        <div class="num"><b id="n-vencem">0</b><span>Vencem em 7 dias</span></div>
+      </div>
+    </section>
+    <section id="tela-pedidos" class="card hidden">
+      <h2>Pedidos</h2>
+      <div id="lista-pedidos"></div>
+    </section>
+    <section id="tela-avulsos" class="card hidden">
+      <h2>Pessoas avulsas</h2>
+      <div id="lista-avulsos"></div>
+    </section>
+    <section id="tela-empresas" class="card hidden">
+      <h2>Empresas</h2>
+      <form id="form-empresa">
+        <label>Nome da empresa<input id="emp-nome" autocomplete="off"></label>
+        <label>E-mail do gerente<input id="emp-email" type="email" autocomplete="off"></label>
+        <button type="submit" class="btn primary big">Criar empresa e convite</button>
+      </form>
+      <p id="st-empresa" class="hint"></p>
+      <div id="lista-empresas"></div>
+    </section>
+    <section id="tela-convites" class="card hidden">
+      <h2>Convites</h2>
+      <p class="hint">O convite fica em rascunho. Nenhum e-mail é enviado. Copie o código e mande você mesmo.</p>
+      <form id="form-convite">
+        <label>E-mail<input id="conv-email" type="email" autocomplete="off"></label>
+        <label>Tipo<select id="conv-tipo"><option value="avulso">Pessoa avulsa</option><option value="gerente">Gerente</option></select></label>
+        <button type="submit" class="btn primary big">Criar convite</button>
+      </form>
+      <p id="st-convite" class="hint"></p>
+      <div id="lista-convites"></div>
+    </section>
+    <section id="tela-conta" class="card hidden">
+      <h2>Minha conta</h2>
+      <p id="st-conta" class="hint"></p>
+      <button type="button" class="btn ghost" id="btn-sair">Sair</button>
+    </section>
+  </div>
+</main>
+<script type="module" src="admin-painel.bundle.js"></script>
+</body>
+</html>

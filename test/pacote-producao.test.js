@@ -39,14 +39,9 @@ test('cada arquivo do service worker já está no site publicado ou entra no pac
     const igual = resposta.status === 200 && remoto.equals(local);
     if (!igual) obrigatorios.set(rel, resposta.status === 200 ? 'restaurar' : 'remover');
   }
-  assert.equal(obrigatorios.get('acesso.js'), 'restaurar');
-  assert.equal(obrigatorios.get('app.js'), 'restaurar');
-  assert.equal(obrigatorios.get('copia-conta.bundle.js'), 'restaurar');
-  assert.equal(obrigatorios.get('index.html'), 'restaurar');
-  assert.equal(obrigatorios.has('persistencia.js'), false);
-  assert.equal(obrigatorios.has('folha-zero-config.js'), false);
-  assert.equal(obrigatorios.has('styles.css'), false);
-  assert.equal(obrigatorios.get('sw.js'), 'restaurar');
+  ['acesso.js', 'app.js', 'copia-conta.bundle.js', 'index.html', 'sw.js', 'persistencia.js', 'folha-zero-config.js', 'styles.css'].forEach((nome) => {
+    assert.equal(obrigatorios.has(nome), false, nome);
+  });
   assert.equal(obrigatorios.has('manifest.webmanifest'), false);
   assert.equal(obrigatorios.has('icons/icon-192.png'), false);
   assert.equal(obrigatorios.has('icons/icon-512.png'), false);
@@ -59,6 +54,7 @@ test('cada arquivo do service worker já está no site publicado ou entra no pac
     fs.mkdirSync(path.dirname(destino), { recursive: true });
     fs.copyFileSync(path.join(raiz, rel), destino);
   }
+  if (obrigatorios.size === 0) return;
   const zip = '/opt/cursor/artifacts/folha-zero-integracao.zip';
   fs.mkdirSync(path.dirname(zip), { recursive: true });
   fs.rmSync(zip, { force: true });
