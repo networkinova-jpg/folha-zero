@@ -1,0 +1,5 @@
+-- Obsoleto de propósito. Não contém DDL.
+-- O papel de proprietário entrou na migração única
+-- supabase/migrations/20261107210000_base_segura.sql
+-- para não aplicar o mesmo objeto duas vezes no banco vazio.
+-- Aplicar este arquivo não muda nada.
