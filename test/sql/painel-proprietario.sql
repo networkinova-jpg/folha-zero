@@ -4,6 +4,14 @@ insert into private.painel_donos (user_id)
 values ('66666666-6666-4666-8666-666666666666')
 on conflict (user_id) do update set ativo = true;
 
+update auth.users
+set email_confirmed_at = now()
+where id in (
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222',
+  '66666666-6666-4666-8666-666666666666'
+);
+
 do $$
 declare definer boolean;
 begin
@@ -72,16 +80,16 @@ reset role;
 
 set role authenticated;
 select set_config('request.jwt.claim.sub', '11111111-1111-4111-8111-111111111111', false);
-select set_config('request.jwt.claim.email', 'ana.teste@example.invalid', false);
+select set_config('request.jwt.claim.email', 'bruno.teste@example.invalid', false);
 do $$
 declare codigo text;
 begin
   select painel_prova.codigo into codigo from painel_prova;
   perform public.painel_aceitar_convite(codigo);
-  raise exception 'ataque passou: email trocado';
+  raise exception 'ataque passou: email do token';
 exception when others then
   if sqlerrm like 'ataque passou:%' then raise; end if;
-  if sqlerrm not like '%email_diferente%' then raise exception 'email trocado: %', sqlerrm; end if;
+  if sqlerrm not like '%email_diferente%' then raise exception 'email do token: %', sqlerrm; end if;
 end $$;
 reset role;
 
@@ -106,7 +114,40 @@ reset role;
 set role authenticated;
 select set_config('request.jwt.claim.sub', '66666666-6666-4666-8666-666666666666', false);
 select set_config('request.jwt.claim.email', 'prop.teste@example.invalid', false);
-select public.painel_decidir_pedido((select pedido from painel_prova), true);
+insert into painel_prova (codigo)
+select public.painel_criar_convite('bruno.teste@example.invalid', 'avulso', null) ->> 'codigo';
+reset role;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '22222222-2222-4222-8222-222222222222', false);
+select set_config('request.jwt.claim.email', 'outra.pessoa@example.invalid', false);
+do $$
+declare codigo text;
+begin
+  select p.codigo into codigo from painel_prova p where p.pedido is null limit 1;
+  perform public.painel_aceitar_convite(codigo);
+  raise exception 'ataque passou: pedido duplicado';
+exception when others then
+  if sqlerrm like 'ataque passou:%' then raise; end if;
+  if sqlerrm not like '%pedido_pendente%' then raise exception 'pedido duplicado: %', sqlerrm; end if;
+end $$;
+reset role;
+
+do $$
+declare situacao text;
+begin
+  select status into situacao
+  from public.painel_convites
+  where codigo = (select codigo from painel_prova where pedido is null limit 1);
+  if situacao is distinct from 'rascunho' then
+    raise exception 'segundo convite foi consumido: %', situacao;
+  end if;
+end $$;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '66666666-6666-4666-8666-666666666666', false);
+select set_config('request.jwt.claim.email', 'prop.teste@example.invalid', false);
+select public.painel_decidir_pedido((select pedido from painel_prova where pedido is not null limit 1), true);
 select public.painel_degustar_avulso('22222222-2222-4222-8222-222222222222');
 select public.painel_licenciar_avulso('22222222-2222-4222-8222-222222222222', current_date + 30);
 reset role;
@@ -166,11 +207,82 @@ begin
   end if;
 end $$;
 do $$
+declare nome text;
 begin
-  perform public.painel_criar_empresa('INOVA Blindagem', 'gerente@example.invalid');
-  raise exception 'ataque passou: inova';
-exception when others then
-  if sqlerrm like 'ataque passou:%' then raise; end if;
-  if sqlerrm not like '%empresa_de_teste%' then raise exception 'inova: %', sqlerrm; end if;
+  foreach nome in array array['INOVA Blindagem', 'INOVA BLINDAGEM ', 'Inova  Blindagem']
+  loop
+    begin
+      perform public.painel_criar_empresa(nome, 'gerente@example.invalid');
+      raise exception 'ataque passou: inova %', nome;
+    exception when others then
+      if sqlerrm like 'ataque passou:%' then raise; end if;
+      if sqlerrm not like '%empresa_de_teste%' then raise exception 'inova %: %', nome, sqlerrm; end if;
+    end;
+  end loop;
 end $$;
 reset role;
+
+insert into auth.users (id, email, email_confirmed_at)
+values ('77777777-7777-4777-8777-777777777777', 'novo.teste@example.invalid', null);
+
+create temp table painel_novo (codigo text);
+grant all on painel_novo to authenticated;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '66666666-6666-4666-8666-666666666666', false);
+select set_config('request.jwt.claim.email', 'prop.teste@example.invalid', false);
+insert into painel_novo (codigo)
+select public.painel_criar_convite('novo.teste@example.invalid', 'avulso', null) ->> 'codigo';
+reset role;
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '77777777-7777-4777-8777-777777777777', false);
+select set_config('request.jwt.claim.email', 'novo.teste@example.invalid', false);
+do $$
+declare codigo text;
+begin
+  select p.codigo into codigo from painel_novo p limit 1;
+  perform public.painel_aceitar_convite(codigo);
+  raise exception 'ataque passou: email nao confirmado';
+exception when others then
+  if sqlerrm like 'ataque passou:%' then raise; end if;
+  if sqlerrm not like '%sessao_sem_email%' then raise exception 'email nao confirmado: %', sqlerrm; end if;
+end $$;
+reset role;
+
+update auth.users set email_confirmed_at = now() where id = '77777777-7777-4777-8777-777777777777';
+
+set role authenticated;
+select set_config('request.jwt.claim.sub', '77777777-7777-4777-8777-777777777777', false);
+select set_config('request.jwt.claim.email', 'pessoa.errada@example.invalid', false);
+select public.painel_aceitar_convite((select codigo from painel_novo limit 1));
+reset role;
+
+insert into public.painel_empresas (nome, gerente_email)
+values ('Oficina Norte', 'gerente.norte@example.invalid');
+
+do $$
+begin
+  insert into public.painel_degustacoes (user_id, empresa_id, inicio, fim, status)
+  values (
+    '22222222-2222-4222-8222-222222222222',
+    (select id from public.painel_empresas where nome = 'Oficina Norte'),
+    current_date, current_date, 'ativa'
+  );
+  raise exception 'ataque passou: dois alvos';
+exception when check_violation then null;
+when others then
+  if sqlerrm like 'ataque passou:%' then raise; end if;
+  raise exception 'dois alvos: %', sqlerrm;
+end $$;
+
+do $$
+begin
+  insert into public.painel_licencas (inicio, validade, status)
+  values (current_date, current_date + 1, 'ativa');
+  raise exception 'ataque passou: licenca sem alvo';
+exception when check_violation then null;
+when others then
+  if sqlerrm like 'ataque passou:%' then raise; end if;
+  raise exception 'licenca sem alvo: %', sqlerrm;
+end $$;

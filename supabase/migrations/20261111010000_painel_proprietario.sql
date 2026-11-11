@@ -30,31 +30,25 @@ $$;
 
 create or replace function private.painel_email_sessao()
 returns text
-language plpgsql
+language sql
 stable
 security definer
 set search_path = ''
 as $$
-declare
-  bruto text;
-  claims text;
-begin
-  bruto := nullif(pg_catalog.btrim(current_setting('request.jwt.claim.email', true)), '');
-  if bruto is null then
-    claims := nullif(current_setting('request.jwt.claims', true), '');
-    if claims is not null then
-      begin
-        bruto := nullif(pg_catalog.btrim(claims::jsonb ->> 'email'), '');
-      exception when others then
-        bruto := null;
-      end;
-    end if;
-  end if;
-  if bruto is null then
-    return null;
-  end if;
-  return lower(bruto);
-end;
+  select lower(pg_catalog.btrim(email))
+  from auth.users
+  where id = auth.uid()
+    and email_confirmed_at is not null
+    and nullif(pg_catalog.btrim(email), '') is not null;
+$$;
+
+create or replace function private.painel_nome_empresa(p_nome text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select lower(regexp_replace(pg_catalog.btrim(coalesce(p_nome, '')), '[[:space:]]+', ' ', 'g'));
 $$;
 
 create or replace function private.painel_exigir_dono()
@@ -75,6 +69,7 @@ $$;
 
 revoke all on function private.painel_sou_dono() from public, anon, authenticated;
 revoke all on function private.painel_email_sessao() from public, anon, authenticated;
+revoke all on function private.painel_nome_empresa(text) from public, anon, authenticated;
 revoke all on function private.painel_exigir_dono() from public, anon, authenticated;
 grant execute on function private.painel_sou_dono() to authenticated;
 grant execute on function private.painel_email_sessao() to authenticated;
@@ -87,7 +82,7 @@ create table if not exists public.painel_empresas (
   gerente_user_id uuid references auth.users (id),
   status text not null default 'ativo' check (status in ('ativo', 'suspenso', 'revogado')),
   criado_em timestamptz not null default now(),
-  constraint painel_empresas_sem_inova check (lower(btrim(nome)) <> 'inova blindagem')
+  constraint painel_empresas_sem_inova check (private.painel_nome_empresa(nome) <> 'inova blindagem')
 );
 
 create table if not exists public.painel_convites (
@@ -131,7 +126,8 @@ create table if not exists public.painel_degustacoes (
   inicio date not null,
   fim date not null,
   status text not null check (status in ('ativa', 'encerrada')),
-  check (fim >= inicio)
+  check (fim >= inicio),
+  constraint painel_degustacoes_um_alvo check (num_nonnulls(user_id, empresa_id) = 1)
 );
 
 create table if not exists public.painel_licencas (
@@ -141,7 +137,8 @@ create table if not exists public.painel_licencas (
   inicio date not null,
   validade date not null,
   status text not null check (status in ('ativa', 'suspensa', 'revogada', 'vencida')),
-  check (validade >= inicio)
+  check (validade >= inicio),
+  constraint painel_licencas_um_alvo check (num_nonnulls(user_id, empresa_id) = 1)
 );
 
 alter table public.painel_empresas enable row level security;
@@ -157,6 +154,22 @@ revoke all on table public.painel_pedidos from public, anon, authenticated;
 revoke all on table public.painel_contas from public, anon, authenticated;
 revoke all on table public.painel_degustacoes from public, anon, authenticated;
 revoke all on table public.painel_licencas from public, anon, authenticated;
+
+alter table public.painel_empresas drop constraint if exists painel_empresas_sem_inova;
+alter table public.painel_empresas add constraint painel_empresas_sem_inova
+  check (private.painel_nome_empresa(nome) <> 'inova blindagem');
+
+alter table public.painel_degustacoes drop constraint if exists painel_degustacoes_um_alvo;
+alter table public.painel_degustacoes add constraint painel_degustacoes_um_alvo
+  check ((user_id is not null) <> (empresa_id is not null));
+
+alter table public.painel_licencas drop constraint if exists painel_licencas_um_alvo;
+alter table public.painel_licencas add constraint painel_licencas_um_alvo
+  check ((user_id is not null) <> (empresa_id is not null));
+
+create unique index if not exists painel_pedidos_pendente_unico
+  on public.painel_pedidos (user_id)
+  where status = 'pendente' and user_id is not null;
 
 create or replace function private.painel_codigo()
 returns text
@@ -203,7 +216,7 @@ begin
   perform private.painel_exigir_dono();
   select count(*) into pedidos from public.painel_pedidos where status = 'pendente';
   select count(*) into avulsos from public.painel_contas where tipo = 'avulso';
-  select count(*) into empresas from public.painel_empresas where lower(btrim(nome)) <> 'inova blindagem';
+  select count(*) into empresas from public.painel_empresas where private.painel_nome_empresa(nome) <> 'inova blindagem';
   select count(*) into vencem from (
     select fim as dia from public.painel_degustacoes
     where status = 'ativa' and fim >= current_date and fim <= current_date + 7
@@ -310,7 +323,7 @@ begin
       order by validade desc
       limit 1
     ) l on true
-    where lower(btrim(e.nome)) <> 'inova blindagem'
+    where private.painel_nome_empresa(e.nome) <> 'inova blindagem'
   ), '[]'::jsonb);
 end;
 $$;
@@ -408,6 +421,12 @@ begin
   end if;
   if convite.email <> mail then
     raise exception 'email_diferente' using errcode = '42501';
+  end if;
+  if exists (
+    select 1 from public.painel_pedidos
+    where user_id = auth.uid() and status = 'pendente'
+  ) then
+    raise exception 'pedido_pendente' using errcode = '23505';
   end if;
   update public.painel_convites
   set status = 'aceito', aceito_por = auth.uid(), aceito_em = now()
@@ -525,13 +544,13 @@ security definer
 set search_path = ''
 as $$
 declare
-  nome text := btrim(coalesce(p_nome, ''));
+  nome text := regexp_replace(pg_catalog.btrim(coalesce(p_nome, '')), '[[:space:]]+', ' ', 'g');
   mail text := lower(btrim(coalesce(p_email, '')));
   empresa uuid;
   codigo text;
 begin
   perform private.painel_exigir_dono();
-  if nome = '' or lower(nome) = 'inova blindagem' then
+  if private.painel_nome_empresa(nome) = '' or private.painel_nome_empresa(nome) = 'inova blindagem' then
     raise exception 'empresa_de_teste' using errcode = '23514';
   end if;
   if mail !~ '^[^@\s]+@[^@\s]+$' then
@@ -558,7 +577,7 @@ begin
   if p_validade is null or p_validade < current_date then
     raise exception 'validade_invalida' using errcode = '23514';
   end if;
-  if not exists (select 1 from public.painel_empresas where id = p_empresa and lower(btrim(nome)) <> 'inova blindagem') then
+  if not exists (select 1 from public.painel_empresas where id = p_empresa and private.painel_nome_empresa(nome) <> 'inova blindagem') then
     raise exception 'empresa_ausente' using errcode = '23514';
   end if;
   update public.painel_licencas set status = 'revogada' where empresa_id = p_empresa and status = 'ativa';
@@ -580,7 +599,7 @@ begin
     raise exception 'status_invalido' using errcode = '23514';
   end if;
   update public.painel_empresas set status = p_status
-  where id = p_empresa and lower(btrim(nome)) <> 'inova blindagem';
+  where id = p_empresa and private.painel_nome_empresa(nome) <> 'inova blindagem';
   if not found then
     raise exception 'empresa_ausente' using errcode = '23514';
   end if;

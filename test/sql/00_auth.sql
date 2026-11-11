@@ -18,6 +18,8 @@ create table if not exists auth.users (
   email text
 );
 
+alter table auth.users add column if not exists email_confirmed_at timestamptz;
+
 create or replace function auth.uid()
 returns uuid
 language sql

@@ -11,7 +11,7 @@
   }
 
   function empresaAceita(nome) {
-    const limpo = String(nome || '').trim().toLowerCase();
+    const limpo = String(nome || '').trim().toLowerCase().replace(/\s+/g, ' ');
     return limpo.length > 1 && limpo !== 'inova blindagem';
   }
 

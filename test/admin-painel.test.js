@@ -21,6 +21,8 @@ test('sem sessão mostra a entrada e quem não é dono só vê a recusa', () => 
 
 test('INOVA não entra na lista real e os contadores são só números', () => {
   assert.equal(logica.empresaAceita('INOVA Blindagem'), false);
+  assert.equal(logica.empresaAceita('INOVA BLINDAGEM '), false);
+  assert.equal(logica.empresaAceita('Inova  Blindagem'), false);
   assert.equal(logica.empresaAceita('  inova blindagem '), false);
   assert.equal(logica.empresaAceita('Oficina Norte'), true);
   assert.deepEqual(logica.contadores({ pedidos: 2, avulsos: 3, empresas: 1, vencem_7_dias: 4 }), {
