@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Folha Zero: painel do proprietário</title>
 <link rel="stylesheet" href="styles.css">
+<style>.num small{display:block;font-size:12px;color:var(--mut);font-weight:400}</style>
 </head>
 <body>
 <header class="topbar">
@@ -17,7 +18,22 @@
     <p id="st-entrada" class="hint"></p>
     <button type="button" class="btn primary big" id="btn-google">Entrar com Google</button>
   </section>
-  <p id="st-recusa" class="acesso-aviso hidden">Esta conta não é do proprietário.</p>
+  <section id="st-recusa" class="hidden">
+    <p class="acesso-aviso">Esta conta não é do proprietário.</p>
+    <button type="button" class="btn ghost" id="btn-sair-recusa">Sair</button>
+  </section>
+  <section id="st-expirada" class="hidden">
+    <p class="acesso-aviso">Sua sessão expirou. Entre de novo com sua conta Google.</p>
+    <p id="st-expirada-extra" class="hint"></p>
+    <div class="actions">
+      <button type="button" class="btn primary" id="btn-entrar-de-novo">Entrar de novo</button>
+      <button type="button" class="btn ghost" id="btn-sair-expirada">Sair</button>
+    </div>
+  </section>
+  <section id="st-temporario" class="hidden">
+    <p class="acesso-aviso">Não foi possível conferir agora. Tente de novo.</p>
+    <button type="button" class="btn ghost" id="btn-tentar">Tentar de novo</button>
+  </section>
   <div id="painel" class="hidden">
     <div class="actions">
       <button type="button" class="btn ghost" data-tela="inicio">Início</button>
@@ -35,8 +51,8 @@
         <div class="num"><b id="n-avulsos">0</b><span>Pessoas avulsas</span></div>
         <div class="num"><b id="n-empresas">0</b><span>Empresas</span></div>
         <div class="num"><b id="n-vencem">0</b><span>Vencem em 7 dias</span></div>
-        <div class="num"><b id="n-ativas">0</b><span>Pessoas ativas</span><span>Entraram ou fizeram backup em 30 dias</span></div>
-        <div class="num"><b id="n-carros">0</b><span>Carros lançados</span><span>Somando os backups na nuvem</span></div>
+        <div class="num"><b id="n-ativas">0</b><span>Pessoas ativas</span><small style="display:block">Entraram ou fizeram backup em 30 dias</small></div>
+        <div class="num"><b id="n-carros">0</b><span>Carros lançados</span><small style="display:block">Somando os backups na nuvem</small></div>
       </div>
     </section>
     <section id="tela-pedidos" class="card hidden">
