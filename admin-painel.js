@@ -56,6 +56,8 @@ async function carregar(supabase) {
   texto('n-avulsos', resumo.avulsos);
   texto('n-empresas', resumo.empresas);
   texto('n-vencem', resumo.vencem);
+  texto('n-ativas', resumo.pessoas);
+  texto('n-carros', resumo.carros);
   const eu = await rpc(supabase, 'painel_eu');
   texto('st-conta', eu && eu.dono
     ? 'Você é o proprietário. Esta conta não tem prazo. E-mail da sessão: ' + (eu.email || 'não informado')
@@ -122,6 +124,25 @@ async function carregar(supabase) {
     acoes.appendChild(botao('Revogar', () => agir(supabase, 'painel_situacao_empresa', { p_empresa: item.id, p_status: 'revogado' })));
     bloco.appendChild(acoes);
     caixaEmpresas.appendChild(bloco);
+  });
+  const pessoas = await rpc(supabase, 'painel_listar_pessoas');
+  const caixaPessoas = $('lista-pessoas');
+  caixaPessoas.replaceChildren();
+  (pessoas || []).forEach((item) => {
+    const visivel = R.pessoaVisivel(item);
+    const bloco = document.createElement('div');
+    const nome = document.createElement('b');
+    nome.textContent = visivel.nome;
+    const email = document.createElement('span');
+    email.textContent = visivel.email;
+    const extra = document.createElement('span');
+    extra.textContent = (visivel.ativa ? 'ativa' : 'inativa') + (visivel.ultimo ? ' ' + visivel.ultimo : '');
+    bloco.appendChild(nome);
+    bloco.appendChild(document.createTextNode(' '));
+    bloco.appendChild(email);
+    bloco.appendChild(document.createTextNode(' '));
+    bloco.appendChild(extra);
+    caixaPessoas.appendChild(bloco);
   });
   const convites = await rpc(supabase, 'painel_listar_convites');
   const caixaConvites = $('lista-convites');

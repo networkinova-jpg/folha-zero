@@ -167,7 +167,7 @@ var require_admin_painel_logica = __commonJS({
   "admin-painel-logica.js"(exports, module) {
     (function(root) {
       const FRASE_RECUSA = "Esta conta n\xE3o \xE9 do propriet\xE1rio.";
-      const TELAS = ["entrada", "inicio", "pedidos", "avulsos", "empresas", "convites", "conta"];
+      const TELAS = ["entrada", "inicio", "pedidos", "avulsos", "empresas", "convites", "pessoas", "conta"];
       function vista(sessao, dono, escolhida) {
         if (!sessao) return { entrada: true, recusa: false, painel: false, tela: "entrada" };
         if (!dono) return { entrada: false, recusa: true, painel: false, tela: "recusa" };
@@ -184,10 +184,21 @@ var require_admin_painel_logica = __commonJS({
           pedidos: Number(r.pedidos) || 0,
           avulsos: Number(r.avulsos) || 0,
           empresas: Number(r.empresas) || 0,
-          vencem: Number(r.vencem_7_dias) || 0
+          vencem: Number(r.vencem_7_dias) || 0,
+          pessoas: Number(r.pessoas_ativas) || 0,
+          carros: Number(r.carros_lancados) || 0
         };
       }
-      const api = { FRASE_RECUSA, TELAS, vista, empresaAceita, contadores };
+      function pessoaVisivel(item) {
+        const origem = item && typeof item === "object" ? item : {};
+        return {
+          nome: origem.nome ? String(origem.nome) : "Sem nome",
+          email: origem.email ? String(origem.email) : "",
+          ativa: origem.ativa === true,
+          ultimo: origem.ultimo_acesso ? String(origem.ultimo_acesso) : ""
+        };
+      }
+      const api = { FRASE_RECUSA, TELAS, vista, empresaAceita, contadores, pessoaVisivel };
       root.FolhaPainelLogica = api;
       if (typeof module !== "undefined" && module.exports) module.exports = api;
     })(typeof globalThis !== "undefined" ? globalThis : exports);
@@ -21159,6 +21170,8 @@ async function carregar(supabase) {
   texto("n-avulsos", resumo.avulsos);
   texto("n-empresas", resumo.empresas);
   texto("n-vencem", resumo.vencem);
+  texto("n-ativas", resumo.pessoas);
+  texto("n-carros", resumo.carros);
   const eu = await rpc(supabase, "painel_eu");
   texto("st-conta", eu && eu.dono ? "Voc\xEA \xE9 o propriet\xE1rio. Esta conta n\xE3o tem prazo. E-mail da sess\xE3o: " + (eu.email || "n\xE3o informado") : R.FRASE_RECUSA);
   const pedidos = await rpc(supabase, "painel_listar_pedidos");
@@ -21223,6 +21236,25 @@ async function carregar(supabase) {
     acoes.appendChild(botao("Revogar", () => agir(supabase, "painel_situacao_empresa", { p_empresa: item.id, p_status: "revogado" })));
     bloco.appendChild(acoes);
     caixaEmpresas.appendChild(bloco);
+  });
+  const pessoas = await rpc(supabase, "painel_listar_pessoas");
+  const caixaPessoas = $("lista-pessoas");
+  caixaPessoas.replaceChildren();
+  (pessoas || []).forEach((item) => {
+    const visivel = R.pessoaVisivel(item);
+    const bloco = document.createElement("div");
+    const nome = document.createElement("b");
+    nome.textContent = visivel.nome;
+    const email = document.createElement("span");
+    email.textContent = visivel.email;
+    const extra = document.createElement("span");
+    extra.textContent = (visivel.ativa ? "ativa" : "inativa") + (visivel.ultimo ? " " + visivel.ultimo : "");
+    bloco.appendChild(nome);
+    bloco.appendChild(document.createTextNode(" "));
+    bloco.appendChild(email);
+    bloco.appendChild(document.createTextNode(" "));
+    bloco.appendChild(extra);
+    caixaPessoas.appendChild(bloco);
   });
   const convites = await rpc(supabase, "painel_listar_convites");
   const caixaConvites = $("lista-convites");

@@ -25,6 +25,7 @@
       <button type="button" class="btn ghost" data-tela="avulsos">Pessoas avulsas</button>
       <button type="button" class="btn ghost" data-tela="empresas">Empresas</button>
       <button type="button" class="btn ghost" data-tela="convites">Convites</button>
+      <button type="button" class="btn ghost" data-tela="pessoas">Pessoas cadastradas</button>
       <button type="button" class="btn ghost" data-tela="conta">Minha conta</button>
     </div>
     <section id="tela-inicio" class="card hidden">
@@ -34,6 +35,8 @@
         <div class="num"><b id="n-avulsos">0</b><span>Pessoas avulsas</span></div>
         <div class="num"><b id="n-empresas">0</b><span>Empresas</span></div>
         <div class="num"><b id="n-vencem">0</b><span>Vencem em 7 dias</span></div>
+        <div class="num"><b id="n-ativas">0</b><span>Pessoas ativas</span><span>Entraram ou fizeram backup em 30 dias</span></div>
+        <div class="num"><b id="n-carros">0</b><span>Carros lançados</span><span>Somando os backups na nuvem</span></div>
       </div>
     </section>
     <section id="tela-pedidos" class="card hidden">
@@ -64,6 +67,10 @@
       </form>
       <p id="st-convite" class="hint"></p>
       <div id="lista-convites"></div>
+    </section>
+    <section id="tela-pessoas" class="card hidden">
+      <h2>Pessoas cadastradas</h2>
+      <div id="lista-pessoas"></div>
     </section>
     <section id="tela-conta" class="card hidden">
       <h2>Minha conta</h2>
