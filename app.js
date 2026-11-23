@@ -229,10 +229,8 @@ function getDesconto(emp, ano, mes, q) { return DB.descontos[qKey(emp, ano, mes,
 /* modo degustação: só para quem começou pela tela de boas-vindas (trialInicio salvo). Sem trialInicio = sem limite. */
 const TRIAL_DIAS = 20, DONO_APP = 'Ricardo Ribeiro';
 function trialInfo() {
-  const ini = DB.settings.trialInicio; if (!ini || DB.settings.liberado) return null;
-  const usados = Math.floor((Date.now() - new Date(ini).getTime()) / 86400000);
-  const restantes = Math.max(0, TRIAL_DIAS - usados);
-  return { usados, restantes, expirado: restantes <= 0 };
+  // Trava local de 20 dias desativada temporariamente até o painel de licenças ir para produção.
+  return null;
 }
 function bloqueadoNovo() {
   const t = trialInfo(); if (!t || !t.expirado) return false;
