@@ -44,6 +44,21 @@ var require_login_google = __commonJS({
         const u = new URL(location2.href);
         return u.origin + u.pathname;
       }
+      const PAGINAS_PRODUCAO = [
+        "https://networkinova-jpg.github.io/folha-zero/",
+        "https://networkinova-jpg.github.io/folha-zero/index.html"
+      ];
+      function podeIniciarGoogleProducao(location2) {
+        if (!location2 || !location2.href) return { ok: false, motivo: "sem_pagina" };
+        let redirectTo;
+        try {
+          redirectTo = retornoDaPagina(location2);
+        } catch (_) {
+          return { ok: false, motivo: "pagina_invalida" };
+        }
+        if (PAGINAS_PRODUCAO.indexOf(redirectTo) < 0) return { ok: false, motivo: "origem_nao_autorizada" };
+        return { ok: true, redirectTo };
+      }
       function podeIniciarGoogle(location2) {
         if (!location2 || !location2.href) return { ok: false, motivo: "sem_pagina" };
         if (origemProducao(location2.origin)) return { ok: false, motivo: "origem_producao" };
@@ -95,6 +110,20 @@ var require_login_google = __commonJS({
         if (destino.searchParams.get("redirect_to") !== redirectTo) return false;
         return true;
       }
+      async function iniciarGoogleProducao(cliente2, location2, navegar) {
+        const permitido = podeIniciarGoogleProducao(location2);
+        if (!permitido.ok) return permitido;
+        const { data, error } = await cliente2.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: permitido.redirectTo, skipBrowserRedirect: true, queryParams: { prompt: "select_account" } }
+        });
+        if (error || !data || !data.url) return { ok: false, motivo: "oauth_falhou", mensagem: mensagemDeErro(error && error.code) };
+        if (!urlDeGoogleAceita(data.url, cliente2.supabaseUrl, permitido.redirectTo)) {
+          return { ok: false, motivo: "destino_recusado" };
+        }
+        if (typeof navegar === "function") navegar(data.url);
+        return { ok: true, redirectTo: permitido.redirectTo };
+      }
       async function iniciarGoogle(cliente2, location2, navegar) {
         const permitido = podeIniciarGoogle(location2);
         if (!permitido.ok) return permitido;
@@ -115,16 +144,282 @@ var require_login_google = __commonJS({
       const api = {
         ORIGEM_PRODUCAO,
         origemProducao,
+        PAGINAS_PRODUCAO,
+        podeIniciarGoogleProducao,
         podeIniciarGoogle,
         retornoDaPagina,
         erroVisivelNaUrl,
         limparUrl,
         mensagemDeSessao,
         urlDeGoogleAceita,
+        iniciarGoogleProducao,
         iniciarGoogle,
         mensagemDeErro
       };
       root.FolhaLoginGoogle = api;
+      if (typeof module !== "undefined" && module.exports) module.exports = api;
+    })(typeof globalThis !== "undefined" ? globalThis : exports);
+  }
+});
+
+// acesso-senha.js
+var require_acesso_senha = __commonJS({
+  "acesso-senha.js"(exports, module) {
+    (function(root) {
+      const MIN_SENHA = 6;
+      function emailValido(email) {
+        const texto2 = String(email || "").trim();
+        if (!texto2 || texto2.length > 320 || /\s/.test(texto2)) return false;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(texto2);
+      }
+      function classificarEntrada(email, senha) {
+        if (!emailValido(email)) return { ok: false, motivo: "email_invalido" };
+        if (String(senha || "").length < MIN_SENHA) return { ok: false, motivo: "senha_curta" };
+        return { ok: true, email: String(email).trim(), senha: String(senha) };
+      }
+      function classificarRecuperacao(email) {
+        if (!emailValido(email)) return { ok: false, motivo: "email_invalido" };
+        return { ok: true, email: String(email).trim() };
+      }
+      function mensagem2(motivo) {
+        if (motivo === "email_invalido") return "Digite um e-mail v\xE1lido.";
+        if (motivo === "senha_curta") return "A senha precisa ter pelo menos 6 caracteres.";
+        if (motivo === "credencial_invalida") return "E-mail ou senha n\xE3o conferem.";
+        if (motivo === "confirmacao_pendente") return "Falta confirmar o e-mail. Veja a caixa de entrada.";
+        if (motivo === "cadastro_enviado") return "Enviamos a confirma\xE7\xE3o para o seu e-mail. Abra o link para concluir a conta.";
+        if (motivo === "recuperacao_enviada") return "Se este e-mail tiver conta, enviamos o link para criar uma senha nova.";
+        if (motivo === "entrou") return "Sess\xE3o iniciada.";
+        if (motivo === "rede") return "N\xE3o foi poss\xEDvel falar com o projeto. Tente de novo.";
+        return "N\xE3o foi poss\xEDvel concluir. Tente de novo.";
+      }
+      function motivoDoErro(erro) {
+        if (!erro) return "outro";
+        if (typeof erro === "string") return motivoDoErro({ message: erro });
+        const msg = String(erro.message || erro.msg || erro.error_description || "").toLowerCase();
+        const code = String(erro.code || erro.error_code || erro.name || "").toLowerCase();
+        const status = Number(erro.status != null ? erro.status : erro.statusCode);
+        if (erro.name === "TypeError" || code === "authretryablefetcherror" || msg.includes("failed to fetch") || msg.includes("network") || status === 0) return "rede";
+        if (code === "invalid_credentials" || msg.includes("invalid login") || msg.includes("invalid credentials")) return "credencial_invalida";
+        if (code === "email_not_confirmed" || msg.includes("email not confirmed") || msg.includes("not confirmed")) return "confirmacao_pendente";
+        if (code === "weak_password" || msg.includes("at least 6") || msg.includes("password should be")) return "senha_curta";
+        if (code === "validation_failed" || msg.includes("unable to validate email") || msg.includes("invalid email")) return "email_invalido";
+        if (status >= 500) return "rede";
+        return "outro";
+      }
+      function retornoDaPagina(location2) {
+        const u = new URL(location2.href);
+        return u.origin + u.pathname;
+      }
+      function resposta(motivo, ok) {
+        return { ok: ok === true, motivo, mensagem: mensagem2(motivo) };
+      }
+      async function entrar(cliente2, email, senha) {
+        const pedido = classificarEntrada(email, senha);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        try {
+          const { data, error } = await cliente2.auth.signInWithPassword({ email: pedido.email, password: pedido.senha });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "credencial_invalida" : motivoDoErro(error), false);
+          const usuario = data && data.user;
+          if (!data || !data.session) {
+            if (usuario && usuario.email_confirmed_at == null && usuario.confirmed_at == null) return resposta("confirmacao_pendente", false);
+            return resposta("confirmacao_pendente", false);
+          }
+          return resposta("entrou", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      async function criarConta(cliente2, email, senha, location2) {
+        const pedido = classificarEntrada(email, senha);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        let redirectTo;
+        try {
+          redirectTo = retornoDaPagina(location2);
+        } catch (_) {
+          return resposta("outro", false);
+        }
+        try {
+          const { data, error } = await cliente2.auth.signUp({
+            email: pedido.email,
+            password: pedido.senha,
+            options: { emailRedirectTo: redirectTo }
+          });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "rede" : motivoDoErro(error), false);
+          if (data && data.session) return resposta("entrou", true);
+          return resposta("cadastro_enviado", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      async function recuperarSenha(cliente2, email, location2) {
+        const pedido = classificarRecuperacao(email);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        let redirectTo;
+        try {
+          redirectTo = retornoDaPagina(location2);
+        } catch (_) {
+          return resposta("outro", false);
+        }
+        try {
+          const { error } = await cliente2.auth.resetPasswordForEmail(pedido.email, { redirectTo });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "rede" : motivoDoErro(error), false);
+          return resposta("recuperacao_enviada", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      const api = {
+        MIN_SENHA,
+        emailValido,
+        classificarEntrada,
+        classificarRecuperacao,
+        mensagem: mensagem2,
+        motivoDoErro,
+        retornoDaPagina,
+        entrar,
+        criarConta,
+        recuperarSenha
+      };
+      root.FolhaAcessoSenha = api;
+      if (typeof module !== "undefined" && module.exports) module.exports = api;
+    })(typeof globalThis !== "undefined" ? globalThis : exports);
+  }
+});
+
+// licenca-teste.js
+var require_licenca_teste = __commonJS({
+  "licenca-teste.js"(exports, module) {
+    (function(root) {
+      const CHAVE = "folhazero_teste_licenca";
+      const PROIBIDA = "folhazero_v1";
+      const AVISO_SUSPENSO = "O acesso para carros novos est\xE1 suspenso. Para voltar a lan\xE7ar, fale com Ricardo Ribeiro. Edi\xE7\xE3o, folhas e backup continuam liberados.";
+      const AVISO_VENCIDO = "O acesso para carros novos est\xE1 vencido. Para voltar a lan\xE7ar, fale com Ricardo Ribeiro. Edi\xE7\xE3o, folhas e backup continuam liberados.";
+      let atual = { bloqueiaNovo: false, resumo: "", aviso: "", motivo: "deslogado", usouCache: false };
+      function dataIso(valor) {
+        const texto2 = String(valor || "").slice(0, 10);
+        return /^\d{4}-\d{2}-\d{2}$/.test(texto2) ? texto2 : "";
+      }
+      function hojeLocal(data) {
+        const d = data || /* @__PURE__ */ new Date();
+        const p = (n) => String(n).padStart(2, "0");
+        return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+      }
+      function formatarData(valor) {
+        const iso = dataIso(valor);
+        if (!iso) return "";
+        const partes = iso.split("-");
+        return partes[2] + "/" + partes[1] + "/" + partes[0];
+      }
+      function dentroDoPrazo(fim, hoje) {
+        const limite = dataIso(fim);
+        const dia = dataIso(hoje);
+        if (!limite || !dia) return false;
+        return limite >= dia;
+      }
+      function enxugar(dados) {
+        const origem = dados && typeof dados === "object" ? dados : {};
+        return {
+          conta: origem.conta || null,
+          degustacao: origem.degustacao || null,
+          degustacao_fim: origem.degustacao_fim || null,
+          licenca: origem.licenca || null,
+          licenca_validade: origem.licenca_validade || null
+        };
+      }
+      function livre(motivo, resumo) {
+        return { bloqueiaNovo: false, resumo: resumo || "", aviso: "", motivo, usouCache: false };
+      }
+      function avaliar(dados, hoje) {
+        const d = enxugar(dados);
+        const conta = d.conta;
+        const deg = d.degustacao;
+        const lic = d.licenca;
+        const degOk = deg === "ativa" && dentroDoPrazo(d.degustacao_fim, hoje);
+        const licOk = lic === "ativa" && dentroDoPrazo(d.licenca_validade, hoje);
+        if (conta === "suspenso" || conta === "revogado") {
+          return { bloqueiaNovo: true, resumo: "Acesso suspenso", aviso: AVISO_SUSPENSO, motivo: conta === "revogado" ? "revogado" : "suspenso", usouCache: false };
+        }
+        if (licOk) return livre("licenca_ativa", "Licen\xE7a ativa at\xE9 " + formatarData(d.licenca_validade));
+        if (degOk) return livre("degustacao_ativa", "Degusta\xE7\xE3o at\xE9 " + formatarData(d.degustacao_fim));
+        if (lic === "suspensa" || lic === "revogada") {
+          return { bloqueiaNovo: true, resumo: "Acesso suspenso", aviso: AVISO_SUSPENSO, motivo: lic === "revogada" ? "revogado" : "suspenso", usouCache: false };
+        }
+        const temConta = !!conta;
+        const temDeg = !!deg;
+        const temLic = !!lic;
+        if (!temConta && !temDeg && !temLic) return livre("sem_registro", "Sem prazo definido");
+        if (temConta && !temDeg && !temLic) return livre("sem_registro", "Sem prazo definido");
+        return { bloqueiaNovo: true, resumo: "Prazo vencido", aviso: AVISO_VENCIDO, motivo: "vencido", usouCache: false };
+      }
+      function decidir(opcoes) {
+        const o = opcoes || {};
+        const hoje = o.hoje || hojeLocal();
+        if (!o.sessao) return livre("deslogado", "");
+        if (o.erroRede) {
+          const cache = o.cache && o.cache.uid && o.sessao.uid && o.cache.uid === o.sessao.uid ? o.cache.dados : null;
+          if (!cache) return livre("offline_sem_cache", "Sem prazo definido");
+          const r = avaliar(cache, hoje);
+          r.usouCache = true;
+          r.motivo = "offline";
+          return r;
+        }
+        return avaliar(o.dados, hoje);
+      }
+      function aplicar(resultado) {
+        atual = resultado || livre("deslogado", "");
+        return atual;
+      }
+      function bloqueioLocal() {
+        return atual;
+      }
+      function proteger(storage, escrever) {
+        const antes = storage.getItem(PROIBIDA);
+        const r = escrever();
+        if (storage.getItem(PROIBIDA) !== antes) {
+          try {
+            if (antes == null) storage.removeItem(PROIBIDA);
+            else storage.setItem(PROIBIDA, antes);
+          } catch (_) {
+          }
+          throw new Error("licenca alterou folhazero_v1");
+        }
+        return r;
+      }
+      function gravar(storage, uid, dados) {
+        const corpo = JSON.stringify({ uid, dados: enxugar(dados) });
+        return proteger(storage, () => {
+          storage.setItem(CHAVE, corpo);
+          return corpo;
+        });
+      }
+      function ler(storage, uid) {
+        try {
+          const bruto = storage.getItem(CHAVE);
+          if (!bruto) return null;
+          const json = JSON.parse(bruto);
+          if (!json || json.uid !== uid || !json.dados) return null;
+          return { uid: json.uid, dados: enxugar(json.dados) };
+        } catch (_) {
+          return null;
+        }
+      }
+      const api = {
+        CHAVE,
+        PROIBIDA,
+        AVISO_SUSPENSO,
+        AVISO_VENCIDO,
+        dataIso,
+        hojeLocal,
+        formatarData,
+        enxugar,
+        avaliar,
+        decidir,
+        aplicar,
+        bloqueioLocal,
+        gravar,
+        ler
+      };
+      root.FolhaLicencaTeste = api;
       if (typeof module !== "undefined" && module.exports) module.exports = api;
     })(typeof globalThis !== "undefined" ? globalThis : exports);
   }
@@ -21753,9 +22048,14 @@ if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and b
 
 // app-teste-painel.js
 var import_login_google = __toESM(require_login_google());
+var import_acesso_senha = __toESM(require_acesso_senha());
+var import_licenca_teste = __toESM(require_licenca_teste());
 var import_fixture_teste = __toESM(require_fixture_teste());
 var import_backup_teste = __toESM(require_backup_teste());
 import { FOLHA_ZERO_TESTE } from "./acesso-teste-config.js";
+var G = globalThis.FolhaLoginGoogle;
+var S = globalThis.FolhaAcessoSenha;
+var L = globalThis.FolhaLicencaTeste;
 var M = globalThis.FolhaModoTeste;
 var F = globalThis.FolhaFixture;
 var B = globalThis.FolhaBackupTeste;
@@ -21771,6 +22071,140 @@ function cliente() {
   return createClient(cfg.url, cfg.publishableKey, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, flowType: "pkce" }
   });
+}
+function mostrarAvisoLicenca(resultado) {
+  const aviso = $("aviso-licenca");
+  if (!aviso) return;
+  if (resultado && resultado.bloqueiaNovo) {
+    aviso.classList.remove("hidden");
+    aviso.textContent = resultado.aviso;
+  } else {
+    aviso.classList.add("hidden");
+    aviso.textContent = "";
+  }
+}
+function publicarLicenca(resultado) {
+  const r = L.aplicar(resultado);
+  texto("st-teste-licenca", r.resumo);
+  const conta = $("acesso-licenca");
+  if (conta) conta.textContent = r.resumo;
+  if (!r.bloqueiaNovo) mostrarAvisoLicenca(r);
+  return r;
+}
+async function atualizarLicenca(supabase, sessao) {
+  if (!sessao || !sessao.user) {
+    publicarLicenca(L.decidir({ sessao: null }));
+    return;
+  }
+  const uid = sessao.user.id;
+  try {
+    const { data, error } = await supabase.rpc("painel_minha_licenca");
+    if (error) throw error;
+    L.gravar(localStorage, uid, data || {});
+    publicarLicenca(L.decidir({ sessao: { uid }, dados: data || {}, hoje: L.hojeLocal() }));
+  } catch (_) {
+    const cache = L.ler(localStorage, uid);
+    publicarLicenca(L.decidir({ sessao: { uid }, erroRede: true, cache, hoje: L.hojeLocal() }));
+  }
+}
+function travarCarroNovo(ev) {
+  const r = L.bloqueioLocal();
+  if (!r.bloqueiaNovo) return;
+  if (ev.currentTarget && ev.currentTarget.dataset && ev.currentTarget.dataset.view === "lancar" && $("f-id") && $("f-id").value) return;
+  ev.preventDefault();
+  ev.stopImmediatePropagation();
+  mostrarAvisoLicenca(r);
+}
+function protegerLancamento() {
+  const botao = $("p-lancar");
+  if (botao) botao.addEventListener("click", travarCarroNovo, true);
+  document.querySelectorAll(".tabbar button").forEach((el) => {
+    if (el.dataset.view === "lancar") el.addEventListener("click", travarCarroNovo, true);
+  });
+  const form = $("form-lanc");
+  if (!form) return;
+  form.addEventListener("submit", (ev) => {
+    if ($("f-id") && $("f-id").value) return;
+    travarCarroNovo(ev);
+  }, true);
+}
+function prepararCartaoAcesso() {
+  const aviso = $("acesso-aviso");
+  if (aviso && /desligado neste aplicativo de teste/.test(aviso.textContent)) {
+    aviso.textContent = "O login \xE9 opcional. D\xE1 para entrar com Google ou com e-mail e senha. Os lan\xE7amentos de teste continuam neste aparelho.";
+  }
+  const form = $("acesso-form");
+  if (!form || form.dataset.senhaPronta === "1") return;
+  form.dataset.senhaPronta = "1";
+  form.querySelectorAll("[disabled]").forEach((el) => {
+    el.disabled = false;
+  });
+  const criar = document.createElement("button");
+  criar.type = "button";
+  criar.className = "btn ghost";
+  criar.setAttribute("data-acesso", "cadastrar");
+  criar.textContent = "Criar conta";
+  const recuperar = document.createElement("button");
+  recuperar.type = "button";
+  recuperar.className = "btn ghost";
+  recuperar.setAttribute("data-acesso", "recuperar");
+  recuperar.textContent = "Esqueci minha senha";
+  form.appendChild(criar);
+  form.appendChild(recuperar);
+  if (!$("acesso-licenca")) {
+    const linha = document.createElement("p");
+    linha.id = "acesso-licenca";
+    linha.className = "hint";
+    form.insertAdjacentElement("afterend", linha);
+  }
+}
+async function senhaDoCartao(acao) {
+  const supabase = cliente();
+  const msg = $("acesso-msg");
+  if (!supabase) {
+    if (msg) msg.textContent = S.mensagem("rede");
+    return;
+  }
+  const email = $("acesso-email") ? $("acesso-email").value : "";
+  const senha = $("acesso-senha") ? $("acesso-senha").value : "";
+  if ($("acesso-senha")) $("acesso-senha").value = "";
+  if (acao === "google") {
+    if (msg) msg.textContent = "Abrindo o Google. O retorno ser\xE1 esta mesma p\xE1gina.";
+    const google = await G.iniciarGoogle(supabase, window.location, (url) => {
+      window.location.assign(url);
+    });
+    if (!google.ok && msg) msg.textContent = google.mensagem || "N\xE3o foi poss\xEDvel abrir o Google.";
+    return;
+  }
+  let r;
+  if (acao === "cadastrar") r = await S.criarConta(supabase, email, senha, window.location);
+  else if (acao === "recuperar") r = await S.recuperarSenha(supabase, email, window.location);
+  else r = await S.entrar(supabase, email, senha);
+  if (msg) msg.textContent = r.mensagem;
+  if (r.ok && r.motivo === "entrou") await pintar();
+}
+async function usarSenha(acao) {
+  const supabase = cliente();
+  if (!supabase) {
+    texto("st-teste-login", S.mensagem("rede"));
+    return;
+  }
+  const email = $("teste-email") ? $("teste-email").value : "";
+  const senha = $("teste-senha") ? $("teste-senha").value : "";
+  if ($("teste-senha")) $("teste-senha").value = "";
+  let r;
+  if (acao === "criar") r = await S.criarConta(supabase, email, senha, window.location);
+  else if (acao === "recuperar") r = await S.recuperarSenha(supabase, email, window.location);
+  else if (acao === "google") {
+    texto("st-teste-login", "Abrindo o Google. O retorno ser\xE1 esta mesma p\xE1gina.");
+    const google = await G.iniciarGoogle(supabase, window.location, (url) => {
+      window.location.assign(url);
+    });
+    if (!google.ok) texto("st-teste-login", google.mensagem || "N\xE3o foi poss\xEDvel abrir o Google.");
+    return;
+  } else r = await S.entrar(supabase, email, senha);
+  texto("st-teste-login", r.mensagem);
+  if (r.ok && r.motivo === "entrou") await pintar();
 }
 function mensagem(motivo) {
   if (motivo === "origem_producao") return "O GitHub Pages n\xE3o envia esta c\xF3pia.";
@@ -21814,7 +22248,8 @@ async function pintar() {
     const { data } = await supabase.auth.getSession();
     sessao = data && data.session;
   }
-  texto("st-teste-sessao", sessao ? "Sess\xE3o ativa nesta conta. Nenhum token \xE9 mostrado." : "Sem sess\xE3o. O login Google continua na tela de acesso.");
+  texto("st-teste-sessao", sessao ? "Sess\xE3o ativa nesta conta. Nenhum token \xE9 mostrado." : "Sem sess\xE3o. O login \xE9 opcional, com Google ou e-mail.");
+  await atualizarLicenca(supabase, sessao);
   const origem = F.paginaPermitida(window.location);
   texto("st-teste-remoto", origem.ok ? "Enviar lan\xE7amentos de teste grava s\xF3 a chave de teste. O aplicativo publicado continua sem c\xF3pia online." : "A c\xF3pia vari\xE1vel s\xF3 abre no site isolado. " + mensagem(origem.motivo));
   const avisoNuvem = $("s-nuvem-info");
@@ -21843,6 +22278,35 @@ async function pintar() {
 }
 async function iniciar() {
   await pintar();
+  protegerLancamento();
+  const formTeste = $("form-teste-entrar");
+  if (formTeste) formTeste.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    usarSenha("entrar");
+  });
+  if ($("btn-teste-criar")) $("btn-teste-criar").addEventListener("click", () => usarSenha("criar"));
+  if ($("btn-teste-senha")) $("btn-teste-senha").addEventListener("click", () => usarSenha("recuperar"));
+  if ($("btn-teste-google")) $("btn-teste-google").addEventListener("click", () => usarSenha("google"));
+  const card = $("acesso-card");
+  if (card) {
+    const corpo = $("acesso-corpo");
+    if (corpo) new MutationObserver(() => prepararCartaoAcesso()).observe(corpo, { childList: true });
+    prepararCartaoAcesso();
+    card.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      senhaDoCartao("email");
+    }, true);
+    card.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-acesso]");
+      if (!btn) return;
+      const acao = btn.getAttribute("data-acesso");
+      if (["email", "google", "cadastrar", "recuperar"].indexOf(acao) < 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      senhaDoCartao(acao);
+    }, true);
+  }
   $("btn-previa-fixture").addEventListener("click", () => {
     const info = M.previa(localStorage, M.documentoFixture());
     const extra = info.colisoes.length ? " Colis\xE3o de id: " + info.colisoes.join(", ") + "." : " Sem colis\xE3o de conte\xFAdo.";

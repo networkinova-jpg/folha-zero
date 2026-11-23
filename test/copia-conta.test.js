@@ -233,8 +233,8 @@ test('o service worker novo não apaga a base e a produção não mistura o test
   assert.equal(sw.includes('folhazero_conta_base'), false);
   assert.equal(sw.includes('localStorage'), false);
   assert.equal(sw.includes('removeItem'), false);
-  assert.equal(sw.includes("const CACHE = 'folha-zero-v22'"), true);
-  assert.equal(sw.includes('folha-zero-v21'), false);
+  assert.equal(sw.includes("const CACHE = 'folha-zero-v23'"), true);
+  assert.equal(sw.includes('folha-zero-v22'), false);
   assert.equal(index.includes('FOLHA_ZERO_MODO_TESTE'), false);
   assert.equal(index.includes('btn-backup-variavel'), false);
   assert.equal(index.includes('copia-conta.bundle.js'), true);

@@ -177,6 +177,7 @@ test('semana e quinzena filtram o gráfico e a situação sem mudar o resumo men
   assert.equal(w.document.getElementById('rm-per-intervalo').textContent, 'Período: 01/11 a 01/11');
   assert.equal(w.document.getElementById('rm-per-prev').disabled, true);
   w.document.querySelector('#rm-per-seg [data-modo="quinzena"]').click();
+  while (!w.document.getElementById('rm-per-prev').disabled) w.document.getElementById('rm-per-prev').click();
   assert.equal(w.document.getElementById('rm-per-intervalo').textContent, '1ª quinzena: 01/11 a 15/11');
   assert.equal(situacao(w, 'Finalizado'), '2');
   assert.equal(situacao(w, 'Faltando vidro'), '0');

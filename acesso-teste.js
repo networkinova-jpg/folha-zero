@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { FOLHA_ZERO_TESTE } from './acesso-teste-config.js';
 import './login-google.js';
+import './acesso-senha.js';
 import './fixture-teste.js';
 
 const G = globalThis.FolhaLoginGoogle;
+const S = globalThis.FolhaAcessoSenha;
 const F = globalThis.FolhaFixture;
 const $ = (id) => document.getElementById(id);
 
@@ -60,22 +62,24 @@ function pintar(estado) {
     : estado.google
       ? 'Google ligado no projeto. O retorno é esta mesma página.'
       : 'Pendente: o provedor Google está desligado no projeto.');
-  texto('st-email', 'Entrar com e-mail e senha só funciona para uma conta que já exista. Criar conta está desligado: a confirmação sairia pelo envio padrão, que não serve para clientes.');
+  texto('st-email', 'Entre com Google ou com e-mail e senha. Criar conta e a senha nova usam esta mesma página no e-mail. O login é opcional.');
   const permitida = F.paginaPermitida(window.location);
   if (!permitida.ok) {
     texto('st-snapshot', permitida.motivo === 'origem_producao'
       ? 'O GitHub Pages fica bloqueado. O teste de cópia só abre no site isolado.'
       : 'O envio só abre em wild-voice-4f08.folha-zero-networkinova.workers.dev/acesso-teste.');
   } else if (!estado.sessao) {
-    texto('st-snapshot', 'Entre com o Google nesta conta. O envio é manual e grava só o conjunto fictício.');
+    texto('st-snapshot', 'Entre com Google ou e-mail nesta conta. O envio é manual e grava só o conjunto fictício.');
   } else {
     texto('st-snapshot', 'Sessão desta conta. O papel de proprietário não vê estes lançamentos. O envio não é automático.');
   }
   texto('st-sessao', estado.sessao ? 'Sessão ativa neste navegador.' : 'Sem sessão de usuário do Folha Zero.');
   const google = $('btn-google');
   if (google) google.disabled = bloqueada || !estado.google;
-  const entrar = $('btn-entrar');
-  if (entrar) entrar.disabled = !estado.email;
+  ['btn-entrar', 'btn-criar', 'btn-senha'].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = !estado.conectado;
+  });
   const nuvem = permitida.ok && !!estado.sessao;
   ['btn-enviar', 'btn-listar', 'btn-restaurar'].forEach((id) => {
     const el = $(id);
@@ -123,15 +127,25 @@ async function iniciar() {
     const r = await G.iniciarGoogle(cliente, window.location, (url) => { window.location.assign(url); });
     if (!r.ok) texto('st-login', r.mensagem || (r.motivo === 'origem_producao' ? 'Login de teste bloqueado nesta origem.' : 'Não foi possível abrir o Google.'));
   });
+  async function aposSenha(resultado) {
+    texto('st-login', resultado.mensagem);
+    pintar(await sondar(cliente));
+  }
   $('form-entrar').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const email = $('acesso-email').value.trim();
+    const email = $('acesso-email').value;
     const senha = $('acesso-senha').value;
     $('acesso-senha').value = '';
-    texto('st-login', 'Tentando entrar. Esta ação não cria conta e não pede e-mail de cadastro.');
-    const { error } = await cliente.auth.signInWithPassword({ email, password: senha });
-    texto('st-login', error ? 'Não entrou. Se a conta não existe, ela não foi criada.' : 'Sessão iniciada.');
-    pintar(await sondar(cliente));
+    await aposSenha(await S.entrar(cliente, email, senha));
+  });
+  $('btn-criar').addEventListener('click', async () => {
+    const email = $('acesso-email').value;
+    const senha = $('acesso-senha').value;
+    $('acesso-senha').value = '';
+    await aposSenha(await S.criarConta(cliente, email, senha, window.location));
+  });
+  $('btn-senha').addEventListener('click', async () => {
+    await aposSenha(await S.recuperarSenha(cliente, $('acesso-email').value, window.location));
   });
   $('btn-sair').addEventListener('click', async () => {
     await cliente.auth.signOut();

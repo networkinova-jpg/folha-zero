@@ -21,7 +21,18 @@
     <p id="st-teste-local" class="hint">Preparando o armazenamento de teste…</p>
     <p id="st-teste-sessao" class="hint"></p>
     <p id="st-teste-remoto" class="hint"></p>
-    <p class="hint"><a id="link-acesso" href="acesso-teste.html">Entrar com Google na tela de acesso</a></p>
+    <p class="hint"><a id="link-acesso" href="acesso-teste.html">Entrar com e-mail ou Google na tela de acesso</a></p>
+    <form id="form-teste-entrar">
+      <label>E-mail<input id="teste-email" type="email" autocomplete="username"></label>
+      <label>Senha<input id="teste-senha" type="password" autocomplete="current-password"></label>
+      <button type="submit" class="btn primary" id="btn-teste-entrar">Entrar</button>
+      <button type="button" class="btn ghost" id="btn-teste-criar">Criar conta</button>
+      <button type="button" class="btn ghost" id="btn-teste-senha">Esqueci minha senha</button>
+      <button type="button" class="btn ghost" id="btn-teste-google">Entrar com Google</button>
+    </form>
+    <p id="st-teste-login" class="hint"></p>
+    <p id="st-teste-licenca" class="hint"></p>
+    <div id="aviso-licenca" class="alert warn hidden"></div>
     <button type="button" class="btn ghost" id="btn-previa-fixture">Ver prévia dos lançamentos de teste</button>
     <button type="button" class="btn primary" id="btn-confirmar-fixture" disabled>Confirmar substituição dos lançamentos de teste</button>
     <p id="st-teste-previa" class="hint"></p>

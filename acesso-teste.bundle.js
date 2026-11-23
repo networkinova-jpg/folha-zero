@@ -44,6 +44,21 @@ var require_login_google = __commonJS({
         const u = new URL(location2.href);
         return u.origin + u.pathname;
       }
+      const PAGINAS_PRODUCAO = [
+        "https://networkinova-jpg.github.io/folha-zero/",
+        "https://networkinova-jpg.github.io/folha-zero/index.html"
+      ];
+      function podeIniciarGoogleProducao(location2) {
+        if (!location2 || !location2.href) return { ok: false, motivo: "sem_pagina" };
+        let redirectTo;
+        try {
+          redirectTo = retornoDaPagina(location2);
+        } catch (_) {
+          return { ok: false, motivo: "pagina_invalida" };
+        }
+        if (PAGINAS_PRODUCAO.indexOf(redirectTo) < 0) return { ok: false, motivo: "origem_nao_autorizada" };
+        return { ok: true, redirectTo };
+      }
       function podeIniciarGoogle(location2) {
         if (!location2 || !location2.href) return { ok: false, motivo: "sem_pagina" };
         if (origemProducao(location2.origin)) return { ok: false, motivo: "origem_producao" };
@@ -95,6 +110,20 @@ var require_login_google = __commonJS({
         if (destino.searchParams.get("redirect_to") !== redirectTo) return false;
         return true;
       }
+      async function iniciarGoogleProducao(cliente, location2, navegar) {
+        const permitido = podeIniciarGoogleProducao(location2);
+        if (!permitido.ok) return permitido;
+        const { data, error } = await cliente.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: permitido.redirectTo, skipBrowserRedirect: true, queryParams: { prompt: "select_account" } }
+        });
+        if (error || !data || !data.url) return { ok: false, motivo: "oauth_falhou", mensagem: mensagemDeErro(error && error.code) };
+        if (!urlDeGoogleAceita(data.url, cliente.supabaseUrl, permitido.redirectTo)) {
+          return { ok: false, motivo: "destino_recusado" };
+        }
+        if (typeof navegar === "function") navegar(data.url);
+        return { ok: true, redirectTo: permitido.redirectTo };
+      }
       async function iniciarGoogle(cliente, location2, navegar) {
         const permitido = podeIniciarGoogle(location2);
         if (!permitido.ok) return permitido;
@@ -115,16 +144,143 @@ var require_login_google = __commonJS({
       const api = {
         ORIGEM_PRODUCAO,
         origemProducao,
+        PAGINAS_PRODUCAO,
+        podeIniciarGoogleProducao,
         podeIniciarGoogle,
         retornoDaPagina,
         erroVisivelNaUrl,
         limparUrl,
         mensagemDeSessao,
         urlDeGoogleAceita,
+        iniciarGoogleProducao,
         iniciarGoogle,
         mensagemDeErro
       };
       root.FolhaLoginGoogle = api;
+      if (typeof module !== "undefined" && module.exports) module.exports = api;
+    })(typeof globalThis !== "undefined" ? globalThis : exports);
+  }
+});
+
+// acesso-senha.js
+var require_acesso_senha = __commonJS({
+  "acesso-senha.js"(exports, module) {
+    (function(root) {
+      const MIN_SENHA = 6;
+      function emailValido(email) {
+        const texto2 = String(email || "").trim();
+        if (!texto2 || texto2.length > 320 || /\s/.test(texto2)) return false;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(texto2);
+      }
+      function classificarEntrada(email, senha) {
+        if (!emailValido(email)) return { ok: false, motivo: "email_invalido" };
+        if (String(senha || "").length < MIN_SENHA) return { ok: false, motivo: "senha_curta" };
+        return { ok: true, email: String(email).trim(), senha: String(senha) };
+      }
+      function classificarRecuperacao(email) {
+        if (!emailValido(email)) return { ok: false, motivo: "email_invalido" };
+        return { ok: true, email: String(email).trim() };
+      }
+      function mensagem(motivo) {
+        if (motivo === "email_invalido") return "Digite um e-mail v\xE1lido.";
+        if (motivo === "senha_curta") return "A senha precisa ter pelo menos 6 caracteres.";
+        if (motivo === "credencial_invalida") return "E-mail ou senha n\xE3o conferem.";
+        if (motivo === "confirmacao_pendente") return "Falta confirmar o e-mail. Veja a caixa de entrada.";
+        if (motivo === "cadastro_enviado") return "Enviamos a confirma\xE7\xE3o para o seu e-mail. Abra o link para concluir a conta.";
+        if (motivo === "recuperacao_enviada") return "Se este e-mail tiver conta, enviamos o link para criar uma senha nova.";
+        if (motivo === "entrou") return "Sess\xE3o iniciada.";
+        if (motivo === "rede") return "N\xE3o foi poss\xEDvel falar com o projeto. Tente de novo.";
+        return "N\xE3o foi poss\xEDvel concluir. Tente de novo.";
+      }
+      function motivoDoErro(erro) {
+        if (!erro) return "outro";
+        if (typeof erro === "string") return motivoDoErro({ message: erro });
+        const msg = String(erro.message || erro.msg || erro.error_description || "").toLowerCase();
+        const code = String(erro.code || erro.error_code || erro.name || "").toLowerCase();
+        const status = Number(erro.status != null ? erro.status : erro.statusCode);
+        if (erro.name === "TypeError" || code === "authretryablefetcherror" || msg.includes("failed to fetch") || msg.includes("network") || status === 0) return "rede";
+        if (code === "invalid_credentials" || msg.includes("invalid login") || msg.includes("invalid credentials")) return "credencial_invalida";
+        if (code === "email_not_confirmed" || msg.includes("email not confirmed") || msg.includes("not confirmed")) return "confirmacao_pendente";
+        if (code === "weak_password" || msg.includes("at least 6") || msg.includes("password should be")) return "senha_curta";
+        if (code === "validation_failed" || msg.includes("unable to validate email") || msg.includes("invalid email")) return "email_invalido";
+        if (status >= 500) return "rede";
+        return "outro";
+      }
+      function retornoDaPagina(location2) {
+        const u = new URL(location2.href);
+        return u.origin + u.pathname;
+      }
+      function resposta(motivo, ok) {
+        return { ok: ok === true, motivo, mensagem: mensagem(motivo) };
+      }
+      async function entrar(cliente, email, senha) {
+        const pedido = classificarEntrada(email, senha);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        try {
+          const { data, error } = await cliente.auth.signInWithPassword({ email: pedido.email, password: pedido.senha });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "credencial_invalida" : motivoDoErro(error), false);
+          const usuario = data && data.user;
+          if (!data || !data.session) {
+            if (usuario && usuario.email_confirmed_at == null && usuario.confirmed_at == null) return resposta("confirmacao_pendente", false);
+            return resposta("confirmacao_pendente", false);
+          }
+          return resposta("entrou", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      async function criarConta(cliente, email, senha, location2) {
+        const pedido = classificarEntrada(email, senha);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        let redirectTo;
+        try {
+          redirectTo = retornoDaPagina(location2);
+        } catch (_) {
+          return resposta("outro", false);
+        }
+        try {
+          const { data, error } = await cliente.auth.signUp({
+            email: pedido.email,
+            password: pedido.senha,
+            options: { emailRedirectTo: redirectTo }
+          });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "rede" : motivoDoErro(error), false);
+          if (data && data.session) return resposta("entrou", true);
+          return resposta("cadastro_enviado", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      async function recuperarSenha(cliente, email, location2) {
+        const pedido = classificarRecuperacao(email);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        let redirectTo;
+        try {
+          redirectTo = retornoDaPagina(location2);
+        } catch (_) {
+          return resposta("outro", false);
+        }
+        try {
+          const { error } = await cliente.auth.resetPasswordForEmail(pedido.email, { redirectTo });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "rede" : motivoDoErro(error), false);
+          return resposta("recuperacao_enviada", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      const api = {
+        MIN_SENHA,
+        emailValido,
+        classificarEntrada,
+        classificarRecuperacao,
+        mensagem,
+        motivoDoErro,
+        retornoDaPagina,
+        entrar,
+        criarConta,
+        recuperarSenha
+      };
+      root.FolhaAcessoSenha = api;
       if (typeof module !== "undefined" && module.exports) module.exports = api;
     })(typeof globalThis !== "undefined" ? globalThis : exports);
   }
@@ -21266,9 +21422,11 @@ if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and b
 
 // acesso-teste.js
 var import_login_google = __toESM(require_login_google());
+var import_acesso_senha = __toESM(require_acesso_senha());
 var import_fixture_teste = __toESM(require_fixture_teste());
 import { FOLHA_ZERO_TESTE } from "./acesso-teste-config.js";
 var G = globalThis.FolhaLoginGoogle;
+var S = globalThis.FolhaAcessoSenha;
 var F = globalThis.FolhaFixture;
 var $ = (id) => document.getElementById(id);
 function chavePublicaAceita(chave) {
@@ -21319,20 +21477,22 @@ function pintar(estado) {
   texto("st-conexao", estado.conectado ? "Projeto de teste alcan\xE7ado. Banco de contas ainda sem usu\xE1rios criados por esta tela." : "N\xE3o foi poss\xEDvel falar com o projeto.");
   const bloqueada = G.origemProducao(window.location.origin);
   texto("st-google", bloqueada ? "Esta origem \xE9 a do aplicativo publicado. O login de teste n\xE3o abre aqui." : estado.google ? "Google ligado no projeto. O retorno \xE9 esta mesma p\xE1gina." : "Pendente: o provedor Google est\xE1 desligado no projeto.");
-  texto("st-email", "Entrar com e-mail e senha s\xF3 funciona para uma conta que j\xE1 exista. Criar conta est\xE1 desligado: a confirma\xE7\xE3o sairia pelo envio padr\xE3o, que n\xE3o serve para clientes.");
+  texto("st-email", "Entre com Google ou com e-mail e senha. Criar conta e a senha nova usam esta mesma p\xE1gina no e-mail. O login \xE9 opcional.");
   const permitida = F.paginaPermitida(window.location);
   if (!permitida.ok) {
     texto("st-snapshot", permitida.motivo === "origem_producao" ? "O GitHub Pages fica bloqueado. O teste de c\xF3pia s\xF3 abre no site isolado." : "O envio s\xF3 abre em wild-voice-4f08.folha-zero-networkinova.workers.dev/acesso-teste.");
   } else if (!estado.sessao) {
-    texto("st-snapshot", "Entre com o Google nesta conta. O envio \xE9 manual e grava s\xF3 o conjunto fict\xEDcio.");
+    texto("st-snapshot", "Entre com Google ou e-mail nesta conta. O envio \xE9 manual e grava s\xF3 o conjunto fict\xEDcio.");
   } else {
     texto("st-snapshot", "Sess\xE3o desta conta. O papel de propriet\xE1rio n\xE3o v\xEA estes lan\xE7amentos. O envio n\xE3o \xE9 autom\xE1tico.");
   }
   texto("st-sessao", estado.sessao ? "Sess\xE3o ativa neste navegador." : "Sem sess\xE3o de usu\xE1rio do Folha Zero.");
   const google = $("btn-google");
   if (google) google.disabled = bloqueada || !estado.google;
-  const entrar = $("btn-entrar");
-  if (entrar) entrar.disabled = !estado.email;
+  ["btn-entrar", "btn-criar", "btn-senha"].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = !estado.conectado;
+  });
   const nuvem = permitida.ok && !!estado.sessao;
   ["btn-enviar", "btn-listar", "btn-restaurar"].forEach((id) => {
     const el = $(id);
@@ -21379,15 +21539,25 @@ async function iniciar() {
     });
     if (!r.ok) texto("st-login", r.mensagem || (r.motivo === "origem_producao" ? "Login de teste bloqueado nesta origem." : "N\xE3o foi poss\xEDvel abrir o Google."));
   });
+  async function aposSenha(resultado) {
+    texto("st-login", resultado.mensagem);
+    pintar(await sondar(cliente));
+  }
   $("form-entrar").addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const email = $("acesso-email").value.trim();
+    const email = $("acesso-email").value;
     const senha = $("acesso-senha").value;
     $("acesso-senha").value = "";
-    texto("st-login", "Tentando entrar. Esta a\xE7\xE3o n\xE3o cria conta e n\xE3o pede e-mail de cadastro.");
-    const { error } = await cliente.auth.signInWithPassword({ email, password: senha });
-    texto("st-login", error ? "N\xE3o entrou. Se a conta n\xE3o existe, ela n\xE3o foi criada." : "Sess\xE3o iniciada.");
-    pintar(await sondar(cliente));
+    await aposSenha(await S.entrar(cliente, email, senha));
+  });
+  $("btn-criar").addEventListener("click", async () => {
+    const email = $("acesso-email").value;
+    const senha = $("acesso-senha").value;
+    $("acesso-senha").value = "";
+    await aposSenha(await S.criarConta(cliente, email, senha, window.location));
+  });
+  $("btn-senha").addEventListener("click", async () => {
+    await aposSenha(await S.recuperarSenha(cliente, $("acesso-email").value, window.location));
   });
   $("btn-sair").addEventListener("click", async () => {
     await cliente.auth.signOut();

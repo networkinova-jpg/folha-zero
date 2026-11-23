@@ -1,9 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { FOLHA_ZERO_TESTE } from './acesso-teste-config.js';
 import './login-google.js';
+import './acesso-senha.js';
+import './licenca-teste.js';
 import './fixture-teste.js';
 import './backup-teste.js';
 
+const G = globalThis.FolhaLoginGoogle;
+const S = globalThis.FolhaAcessoSenha;
+const L = globalThis.FolhaLicencaTeste;
 const M = globalThis.FolhaModoTeste;
 const F = globalThis.FolhaFixture;
 const B = globalThis.FolhaBackupTeste;
@@ -18,6 +23,142 @@ function cliente() {
   return createClient(cfg.url, cfg.publishableKey, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, flowType: 'pkce' }
   });
+}
+
+function mostrarAvisoLicenca(resultado) {
+  const aviso = $('aviso-licenca');
+  if (!aviso) return;
+  if (resultado && resultado.bloqueiaNovo) {
+    aviso.classList.remove('hidden');
+    aviso.textContent = resultado.aviso;
+  } else {
+    aviso.classList.add('hidden');
+    aviso.textContent = '';
+  }
+}
+
+function publicarLicenca(resultado) {
+  const r = L.aplicar(resultado);
+  texto('st-teste-licenca', r.resumo);
+  const conta = $('acesso-licenca');
+  if (conta) conta.textContent = r.resumo;
+  if (!r.bloqueiaNovo) mostrarAvisoLicenca(r);
+  return r;
+}
+
+async function atualizarLicenca(supabase, sessao) {
+  if (!sessao || !sessao.user) {
+    publicarLicenca(L.decidir({ sessao: null }));
+    return;
+  }
+  const uid = sessao.user.id;
+  try {
+    const { data, error } = await supabase.rpc('painel_minha_licenca');
+    if (error) throw error;
+    L.gravar(localStorage, uid, data || {});
+    publicarLicenca(L.decidir({ sessao: { uid: uid }, dados: data || {}, hoje: L.hojeLocal() }));
+  } catch (_) {
+    const cache = L.ler(localStorage, uid);
+    publicarLicenca(L.decidir({ sessao: { uid: uid }, erroRede: true, cache: cache, hoje: L.hojeLocal() }));
+  }
+}
+
+function travarCarroNovo(ev) {
+  const r = L.bloqueioLocal();
+  if (!r.bloqueiaNovo) return;
+  if (ev.currentTarget && ev.currentTarget.dataset && ev.currentTarget.dataset.view === 'lancar' && $('f-id') && $('f-id').value) return;
+  ev.preventDefault();
+  ev.stopImmediatePropagation();
+  mostrarAvisoLicenca(r);
+}
+
+function protegerLancamento() {
+  const botao = $('p-lancar');
+  if (botao) botao.addEventListener('click', travarCarroNovo, true);
+  document.querySelectorAll('.tabbar button').forEach((el) => {
+    if (el.dataset.view === 'lancar') el.addEventListener('click', travarCarroNovo, true);
+  });
+  const form = $('form-lanc');
+  if (!form) return;
+  form.addEventListener('submit', (ev) => {
+    if ($('f-id') && $('f-id').value) return;
+    travarCarroNovo(ev);
+  }, true);
+}
+
+function prepararCartaoAcesso() {
+  const aviso = $('acesso-aviso');
+  if (aviso && /desligado neste aplicativo de teste/.test(aviso.textContent)) {
+    aviso.textContent = 'O login é opcional. Dá para entrar com Google ou com e-mail e senha. Os lançamentos de teste continuam neste aparelho.';
+  }
+  const form = $('acesso-form');
+  if (!form || form.dataset.senhaPronta === '1') return;
+  form.dataset.senhaPronta = '1';
+  form.querySelectorAll('[disabled]').forEach((el) => { el.disabled = false; });
+  const criar = document.createElement('button');
+  criar.type = 'button';
+  criar.className = 'btn ghost';
+  criar.setAttribute('data-acesso', 'cadastrar');
+  criar.textContent = 'Criar conta';
+  const recuperar = document.createElement('button');
+  recuperar.type = 'button';
+  recuperar.className = 'btn ghost';
+  recuperar.setAttribute('data-acesso', 'recuperar');
+  recuperar.textContent = 'Esqueci minha senha';
+  form.appendChild(criar);
+  form.appendChild(recuperar);
+  if (!$('acesso-licenca')) {
+    const linha = document.createElement('p');
+    linha.id = 'acesso-licenca';
+    linha.className = 'hint';
+    form.insertAdjacentElement('afterend', linha);
+  }
+}
+
+async function senhaDoCartao(acao) {
+  const supabase = cliente();
+  const msg = $('acesso-msg');
+  if (!supabase) {
+    if (msg) msg.textContent = S.mensagem('rede');
+    return;
+  }
+  const email = $('acesso-email') ? $('acesso-email').value : '';
+  const senha = $('acesso-senha') ? $('acesso-senha').value : '';
+  if ($('acesso-senha')) $('acesso-senha').value = '';
+  if (acao === 'google') {
+    if (msg) msg.textContent = 'Abrindo o Google. O retorno será esta mesma página.';
+    const google = await G.iniciarGoogle(supabase, window.location, (url) => { window.location.assign(url); });
+    if (!google.ok && msg) msg.textContent = google.mensagem || 'Não foi possível abrir o Google.';
+    return;
+  }
+  let r;
+  if (acao === 'cadastrar') r = await S.criarConta(supabase, email, senha, window.location);
+  else if (acao === 'recuperar') r = await S.recuperarSenha(supabase, email, window.location);
+  else r = await S.entrar(supabase, email, senha);
+  if (msg) msg.textContent = r.mensagem;
+  if (r.ok && r.motivo === 'entrou') await pintar();
+}
+
+async function usarSenha(acao) {
+  const supabase = cliente();
+  if (!supabase) {
+    texto('st-teste-login', S.mensagem('rede'));
+    return;
+  }
+  const email = $('teste-email') ? $('teste-email').value : '';
+  const senha = $('teste-senha') ? $('teste-senha').value : '';
+  if ($('teste-senha')) $('teste-senha').value = '';
+  let r;
+  if (acao === 'criar') r = await S.criarConta(supabase, email, senha, window.location);
+  else if (acao === 'recuperar') r = await S.recuperarSenha(supabase, email, window.location);
+  else if (acao === 'google') {
+    texto('st-teste-login', 'Abrindo o Google. O retorno será esta mesma página.');
+    const google = await G.iniciarGoogle(supabase, window.location, (url) => { window.location.assign(url); });
+    if (!google.ok) texto('st-teste-login', google.mensagem || 'Não foi possível abrir o Google.');
+    return;
+  } else r = await S.entrar(supabase, email, senha);
+  texto('st-teste-login', r.mensagem);
+  if (r.ok && r.motivo === 'entrou') await pintar();
 }
 
 function mensagem(motivo) {
@@ -59,7 +200,8 @@ async function pintar() {
     const { data } = await supabase.auth.getSession();
     sessao = data && data.session;
   }
-  texto('st-teste-sessao', sessao ? 'Sessão ativa nesta conta. Nenhum token é mostrado.' : 'Sem sessão. O login Google continua na tela de acesso.');
+  texto('st-teste-sessao', sessao ? 'Sessão ativa nesta conta. Nenhum token é mostrado.' : 'Sem sessão. O login é opcional, com Google ou e-mail.');
+  await atualizarLicenca(supabase, sessao);
   const origem = F.paginaPermitida(window.location);
   texto('st-teste-remoto', origem.ok
     ? 'Enviar lançamentos de teste grava só a chave de teste. O aplicativo publicado continua sem cópia online.'
@@ -87,6 +229,32 @@ async function pintar() {
 
 async function iniciar() {
   await pintar();
+  protegerLancamento();
+  const formTeste = $('form-teste-entrar');
+  if (formTeste) formTeste.addEventListener('submit', (ev) => { ev.preventDefault(); usarSenha('entrar'); });
+  if ($('btn-teste-criar')) $('btn-teste-criar').addEventListener('click', () => usarSenha('criar'));
+  if ($('btn-teste-senha')) $('btn-teste-senha').addEventListener('click', () => usarSenha('recuperar'));
+  if ($('btn-teste-google')) $('btn-teste-google').addEventListener('click', () => usarSenha('google'));
+  const card = $('acesso-card');
+  if (card) {
+    const corpo = $('acesso-corpo');
+    if (corpo) new MutationObserver(() => prepararCartaoAcesso()).observe(corpo, { childList: true });
+    prepararCartaoAcesso();
+    card.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      senhaDoCartao('email');
+    }, true);
+    card.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-acesso]');
+      if (!btn) return;
+      const acao = btn.getAttribute('data-acesso');
+      if (['email', 'google', 'cadastrar', 'recuperar'].indexOf(acao) < 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      senhaDoCartao(acao);
+    }, true);
+  }
   $('btn-previa-fixture').addEventListener('click', () => {
     const info = M.previa(localStorage, M.documentoFixture());
     const extra = info.colisoes.length ? ' Colisão de id: ' + info.colisoes.join(', ') + '.' : ' Sem colisão de conteúdo.';

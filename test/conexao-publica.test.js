@@ -14,7 +14,12 @@ test('a tela usa só a chave publishable e o projeto responde sem criar conta', 
   const cfg = config();
   assert.equal(cfg.publishableKey.startsWith('sb_publishable_'), true);
   assert.equal(/service_role/i.test(cfg.publishableKey), false);
-  assert.equal(fs.readFileSync(path.join(__dirname, '..', 'acesso-teste.js'), 'utf8').includes('signUp'), false);
+  const telaFonte = fs.readFileSync(path.join(__dirname, '..', 'acesso-teste.js'), 'utf8');
+  const senhaFonte = fs.readFileSync(path.join(__dirname, '..', 'acesso-senha.js'), 'utf8');
+  assert.equal(telaFonte.includes('signUp'), false);
+  assert.equal(telaFonte.includes('criarConta'), true);
+  assert.equal(senhaFonte.includes('signUp'), true);
+  assert.equal(senhaFonte.includes('folhazero_v1'), false);
   const headers = { apikey: cfg.publishableKey, Authorization: 'Bearer ' + cfg.publishableKey };
   const saude = await fetch(cfg.url + '/auth/v1/health', { headers });
   assert.equal(saude.status, 200);
