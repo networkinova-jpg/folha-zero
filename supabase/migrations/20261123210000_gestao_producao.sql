@@ -973,3 +973,68 @@ grant execute on function public.gestao_sla_definir(uuid, text, numeric) to auth
 grant execute on function public.gestao_dispositivo_ver() to authenticated;
 grant execute on function public.gestao_dispositivo_abrir(text, text) to authenticated;
 grant execute on function public.gestao_dispositivo_confirmar(text, text, boolean) to authenticated;
+
+create or replace function private.gestao_minha_posicao()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  uid uuid;
+  empresa uuid;
+  empresa_nome text;
+  ativas integer;
+  linha public.gestao_vinculos%rowtype;
+begin
+  uid := private.gestao_exigir_sessao();
+  select count(*) into ativas
+  from public.painel_empresas
+  where gerente_user_id = uid and status = 'ativo';
+  if ativas > 1 then
+    raise exception 'gerente_varias_empresas' using errcode = '23514';
+  end if;
+  select e.id, e.nome into empresa, empresa_nome
+  from public.painel_empresas e
+  where e.gerente_user_id = uid
+  order by (e.status = 'ativo') desc, e.criado_em
+  limit 1;
+  if empresa is not null then
+    return jsonb_build_object('papel', 'gerente', 'empresa_id', empresa, 'empresa_nome', empresa_nome);
+  end if;
+  select * into linha
+  from public.gestao_vinculos
+  where user_id = uid and status in ('ativo', 'pendente_consentimento')
+  order by (status = 'ativo') desc
+  limit 1;
+  if not found then
+    select * into linha
+    from public.gestao_vinculos
+    where user_id = uid and status = 'revogado'
+    order by revogado_em desc nulls last
+    limit 1;
+  end if;
+  if found then
+    select e.nome into empresa_nome from public.painel_empresas e where e.id = linha.empresa_id;
+    return jsonb_build_object(
+      'papel', 'prestador',
+      'empresa_id', linha.empresa_id,
+      'empresa_nome', empresa_nome,
+      'vinculo', linha.id,
+      'status', linha.status
+    );
+  end if;
+  return jsonb_build_object('papel', 'nenhum');
+end;
+$$;
+
+revoke all on function private.gestao_minha_posicao() from public, anon;
+grant execute on function private.gestao_minha_posicao() to authenticated;
+
+create or replace function public.gestao_minha_posicao()
+returns jsonb language plpgsql security invoker set search_path = ''
+as $$ begin return private.gestao_minha_posicao(); end; $$;
+
+revoke all on function public.gestao_minha_posicao() from public, anon;
+grant execute on function public.gestao_minha_posicao() to authenticated;

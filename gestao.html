@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folha Zero: gestão de produção</title>
+<link rel="stylesheet" href="styles.css">
+<style>.num small{display:block;font-size:12px;color:var(--mut);font-weight:400}</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo">FZ</span><div><strong>Gestão de produção</strong><small>Site de teste. Não é o app do dia a dia.</small></div></div>
+</header>
+<main>
+  <section id="tela-entrada" class="card">
+    <h2>Entrada</h2>
+    <p class="hint">Entre com o Google ou com e-mail e senha. O login é opcional para o app do dia a dia. Esta página não lê os lançamentos do celular.</p>
+    <p id="st-entrada" class="hint"></p>
+    <button type="button" class="btn primary big" id="btn-google">Entrar com Google</button>
+    <form id="form-entrar">
+      <label>E-mail<input id="acesso-email" type="email" autocomplete="username"></label>
+      <label>Senha<input id="acesso-senha" type="password" autocomplete="current-password"></label>
+      <button type="submit" class="btn primary big" id="btn-entrar">Entrar</button>
+      <button type="button" class="btn ghost" id="btn-criar">Criar conta</button>
+      <button type="button" class="btn ghost" id="btn-senha">Esqueci minha senha</button>
+    </form>
+    <p id="st-login" class="hint"></p>
+    <button type="button" class="btn ghost" id="btn-demo-entrada">Ver demonstração com dados de exemplo</button>
+  </section>
+  <section id="st-expirada" class="hidden">
+    <p class="acesso-aviso">Sua sessão expirou. Entre de novo com sua conta Google.</p>
+    <p id="st-expirada-extra" class="hint"></p>
+    <div class="actions">
+      <button type="button" class="btn primary" id="btn-entrar-de-novo">Entrar de novo</button>
+      <button type="button" class="btn ghost" id="btn-sair-expirada">Sair</button>
+    </div>
+  </section>
+  <section id="st-temporario" class="hidden">
+    <p class="acesso-aviso">Não foi possível conferir agora. Tente de novo.</p>
+    <button type="button" class="btn ghost" id="btn-tentar">Tentar de novo</button>
+    <button type="button" class="btn ghost" id="btn-sair-temporario">Sair</button>
+  </section>
+  <section id="st-sql" class="card hidden">
+    <h2>Banco da Gestão</h2>
+    <p id="st-sql-texto" class="acesso-aviso">O banco da Gestão ainda não foi aplicado. Você pode ver a demonstração com dados de exemplo.</p>
+    <button type="button" class="btn ghost" id="btn-demo-sql">Ver demonstração com dados de exemplo</button>
+    <button type="button" class="btn ghost" id="btn-sair-sql">Sair</button>
+  </section>
+  <div id="painel" class="hidden">
+    <p id="st-exemplo" class="acesso-aviso hidden">Exemplo local. Sem mexer no banco.</p>
+    <div class="actions" id="nav-gerente">
+      <button type="button" class="btn ghost" data-tela="inicio">Início</button>
+      <button type="button" class="btn ghost" data-tela="setores">Por setor</button>
+      <button type="button" class="btn ghost" data-tela="pausas">Pausas e gargalos</button>
+      <button type="button" class="btn ghost" data-tela="sla">SLA</button>
+      <button type="button" class="btn ghost" data-tela="equipes">Equipes e convites</button>
+      <button type="button" class="btn ghost" id="btn-sair">Sair</button>
+    </div>
+    <section id="tela-inicio" class="card hidden">
+      <h2>Início</h2>
+      <p id="st-empresa" class="hint"></p>
+      <div class="nums">
+        <div class="num"><b id="n-ativos">0</b><span>Carros ativos</span></div>
+        <div class="num"><b id="n-pausados">0</b><span>Pausados</span></div>
+        <div class="num"><b id="n-concluidos">0</b><span>Concluídos</span></div>
+        <div class="num"><b id="n-fora">0</b><span>Fora do SLA</span></div>
+      </div>
+      <h3>Gargalos</h3>
+      <div id="lista-gargalos"></div>
+    </section>
+    <section id="tela-setores" class="card hidden">
+      <h2>Por setor</h2>
+      <label>Equipe<select id="filtro-equipe"><option value="">Todas</option></select></label>
+      <label>Prestador<select id="filtro-prestador"><option value="">Todos</option></select></label>
+      <div id="lista-setores"></div>
+    </section>
+    <section id="tela-pausas" class="card hidden">
+      <h2>Pausas e gargalos</h2>
+      <p class="hint">Fim de expediente aparece por último e não entra no tempo útil.</p>
+      <div id="lista-pausas"></div>
+      <h3>Fora do SLA</h3>
+      <div id="lista-fora"></div>
+    </section>
+    <section id="tela-sla" class="card hidden">
+      <h2>SLA</h2>
+      <p class="hint">Horas úteis por setor. O padrão é 8. Só vale no banco quando a Gestão já foi aplicada.</p>
+      <div id="lista-sla"></div>
+    </section>
+    <section id="tela-equipes" class="card hidden">
+      <h2>Equipes e convites</h2>
+      <p class="hint">O convite fica em rascunho. Nenhum e-mail é enviado. Copie o código e mande você mesmo.</p>
+      <form id="form-equipe">
+        <label>Nome da equipe<input id="equipe-nome" autocomplete="off"></label>
+        <button type="submit" class="btn primary">Criar equipe</button>
+      </form>
+      <div id="lista-equipes"></div>
+      <form id="form-convite">
+        <label>E-mail do prestador<input id="conv-email" type="email" autocomplete="off"></label>
+        <label>Equipe<select id="conv-equipe"><option value="">Sem equipe</option></select></label>
+        <button type="submit" class="btn primary">Gerar convite</button>
+      </form>
+      <p id="st-convite" class="hint"></p>
+      <div id="lista-convites"></div>
+      <h3>Vínculos</h3>
+      <div id="lista-vinculos"></div>
+    </section>
+    <section id="tela-prestador" class="card hidden">
+      <h2>Minha equipe</h2>
+      <p id="st-prestador" class="hint"></p>
+      <form id="form-codigo">
+        <label>Código do convite<input id="codigo-convite" autocomplete="off"></label>
+        <button type="submit" class="btn primary">Aceitar convite</button>
+      </form>
+      <p id="st-codigo" class="hint"></p>
+      <div class="card" id="cartao-consentimento">
+        <h3>Consentimento</h3>
+        <p id="st-visto" class="hint"></p>
+        <p id="st-celular" class="hint"></p>
+        <button type="button" class="btn primary" id="btn-consentir">Concordo em compartilhar</button>
+        <button type="button" class="btn ghost" id="btn-revogar">Revogar consentimento</button>
+        <p id="st-revoga" class="hint"></p>
+      </div>
+      <div class="card" id="cartao-aparelho">
+        <h3>Celular ativo</h3>
+        <p id="st-aparelho" class="hint"></p>
+        <button type="button" class="btn ghost" id="btn-trocar">Continuar neste aparelho</button>
+      </div>
+      <button type="button" class="btn ghost" id="btn-sair-prestador">Sair</button>
+    </section>
+  </div>
+</main>
+<script type="module" src="gestao-producao.bundle.js"></script>
+</body>
+</html>
