@@ -4,15 +4,56 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Folha Zero: gestão de produção</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f2b134'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='14' font-family='sans-serif' font-weight='700' fill='%230f3d5e'%3EFZ%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
-<style>.num small{display:block;font-size:12px;color:var(--mut);font-weight:400}</style>
+<style>
+body.ux main{max-width:1080px;padding-bottom:32px}
+body.ux .ux-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+body.ux .ux-top .brand{flex:1;min-width:200px}
+body.ux .ux-chip{background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700}
+body.ux .ux-chip:empty{display:none}
+@media(max-width:720px){body.ux .ux-top .brand{flex-basis:100%}}
+body.ux .ux-top .btn{min-height:40px;background:#fff;color:var(--pri)}
+body.ux .ux-centro{max-width:460px;margin:24px auto}
+body.ux .ux-nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+body.ux .ux-nav .btn{width:auto;white-space:nowrap;min-height:44px;display:inline-flex;align-items:center;gap:6px}
+body.ux .ux-nav svg{width:18px;height:18px}
+body.ux .ux-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(min-width:900px){body.ux .ux-kpis{grid-template-columns:repeat(4,1fr)}}
+body.ux .ux-kpi{background:#fff;border-radius:16px;padding:16px;box-shadow:0 8px 24px rgba(15,61,94,.07)}
+body.ux .ux-kpi b{display:block;font-size:32px;line-height:1}
+body.ux .ux-kpi span{display:block;font-weight:800;margin-top:8px}
+body.ux .ux-kpi.ok b{color:var(--ok)} body.ux .ux-kpi.warn b{color:var(--warn)} body.ux .ux-kpi.err b{color:var(--err)} body.ux .ux-kpi.info b{color:var(--pri)}
+body.ux .ux-faixa{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;background:#fff8eb;border:1px solid #f2d08b;border-radius:12px;padding:10px 12px;margin-bottom:12px}
+body.ux .ux-setor{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(min-width:900px){body.ux .ux-setor{grid-template-columns:repeat(5,1fr)}}
+body.ux .ux-setor button{text-align:left;background:#fff;border:1px solid #e6edf5;border-radius:14px;padding:12px;min-height:88px;font-weight:800;color:var(--pri);font-family:inherit}
+body.ux .ux-setor button.alerta{border-color:#f2d08b;background:#fff8eb}
+body.ux .ux-setor button small{display:block;font-weight:600;color:var(--mut);margin-top:6px}
+body.ux .ux-item{background:#fff;border-radius:14px;padding:12px 14px;margin:8px 0;box-shadow:0 1px 3px rgba(15,61,94,.08)}
+body.ux .ux-os{font-size:20px;font-weight:800}
+body.ux .ux-selo{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800;margin:4px 4px 0 0;background:#e7eef6;color:var(--pri)}
+body.ux .ux-selo.fim{background:#e2e8f0;color:#334155}
+body.ux .ux-bar{height:8px;background:#e7eef6;border-radius:99px;overflow:hidden;margin-top:8px}
+body.ux .ux-bar i{display:block;height:100%;background:var(--ok);width:0}
+body.ux .ux-bar.atrasado i{background:var(--err)}
+body.ux .ux-chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+body.ux .ux-chips button{border:0;background:#e7eef6;color:var(--pri);border-radius:999px;padding:8px 12px;font-weight:700;min-height:36px;font-family:inherit}
+body.ux .ux-chips button.ativo{background:var(--pri);color:#fff}
+body.ux .ux-duas{display:grid;gap:8px}
+@media(min-width:800px){body.ux .ux-duas{grid-template-columns:1fr 1fr}}
+body.ux .ux-priv{background:#f4f6f9}
+</style>
 </head>
-<body>
-<header class="topbar">
-  <div class="brand"><span class="logo">FZ</span><div><strong>Gestão de produção</strong><small>Site de teste. Não é o app do dia a dia.</small></div></div>
+<body class="ux">
+<header class="topbar ux-top">
+  <div class="brand"><span class="logo">FZ</span><div><strong>Folha Zero · Gestão de Produção</strong><small>Site de teste. Não é o app do dia a dia.</small></div></div>
+  <span id="chip-modo" class="ux-chip">Ao vivo</span>
+  <span id="chip-papel" class="ux-chip"></span>
+  <button type="button" class="btn" id="btn-sair-topo">Sair</button>
 </header>
 <main>
-  <section id="tela-entrada" class="card">
+  <section id="tela-entrada" class="card ux-centro">
     <h2>Entrada</h2>
     <p class="hint">Entre com o Google ou com e-mail e senha. O login é opcional para o app do dia a dia. Esta página não lê os lançamentos do celular.</p>
     <p id="st-entrada" class="hint"></p>
@@ -25,7 +66,8 @@
       <button type="button" class="btn ghost" id="btn-senha">Esqueci minha senha</button>
     </form>
     <p id="st-login" class="hint"></p>
-    <button type="button" class="btn ghost" id="btn-demo-entrada">Ver demonstração com dados de exemplo</button>
+    <p class="hint">A demonstração fica só neste navegador e não altera o banco.</p>
+    <button type="button" class="btn primary big" id="btn-demo-entrada">Ver demonstração com dados de exemplo</button>
   </section>
   <section id="st-expirada" class="hidden">
     <p class="acesso-aviso">Sua sessão expirou. Entre de novo com sua conta Google.</p>
@@ -47,32 +89,40 @@
     <button type="button" class="btn ghost" id="btn-sair-sql">Sair</button>
   </section>
   <div id="painel" class="hidden">
-    <p id="st-exemplo" class="acesso-aviso hidden">Exemplo local. Sem mexer no banco.</p>
-    <div class="actions" id="nav-gerente">
-      <button type="button" class="btn ghost" data-tela="inicio">Início</button>
-      <button type="button" class="btn ghost" data-tela="setores">Por setor</button>
-      <button type="button" class="btn ghost" data-tela="pausas">Pausas e gargalos</button>
-      <button type="button" class="btn ghost" data-tela="sla">SLA</button>
-      <button type="button" class="btn ghost" data-tela="equipes">Equipes e convites</button>
+    <div id="st-exemplo" class="ux-faixa hidden">
+      <span>Exemplo local. Sem mexer no banco.</span>
+      <button type="button" class="btn ghost" id="btn-sair-demo">Sair da demonstração</button>
+    </div>
+    <div class="ux-nav" id="nav-gerente">
+      <button type="button" class="btn ghost" data-tela="inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/></svg>Início</button>
+      <button type="button" class="btn ghost" data-tela="setores"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>Produção</button>
+      <button type="button" class="btn ghost" data-tela="pausas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>Pausas e gargalos</button>
+      <button type="button" class="btn ghost" data-tela="sla"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-4 3 2 4-6"/></svg>SLA</button>
+      <button type="button" class="btn ghost" data-tela="equipes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="9" r="2"/><path d="M3 19c.6-3 2.6-4.5 5-4.5s4.4 1.5 5 4.5M14 14.5c2 .3 3.5 1.4 4 3.5"/></svg>Equipes e convites</button>
       <button type="button" class="btn ghost" id="btn-sair">Sair</button>
     </div>
     <section id="tela-inicio" class="card hidden">
       <h2>Início</h2>
       <p id="st-empresa" class="hint"></p>
-      <div class="nums">
-        <div class="num"><b id="n-ativos">0</b><span>Carros ativos</span></div>
-        <div class="num"><b id="n-pausados">0</b><span>Pausados</span></div>
-        <div class="num"><b id="n-concluidos">0</b><span>Concluídos</span></div>
-        <div class="num"><b id="n-fora">0</b><span>Fora do SLA</span></div>
+      <div class="ux-kpis">
+        <div class="ux-kpi info"><b id="n-ativos">0</b><span>Em andamento</span></div>
+        <div class="ux-kpi warn"><b id="n-pausados">0</b><span>Pausados</span></div>
+        <div class="ux-kpi err"><b id="n-fora">0</b><span>Fora do SLA</span></div>
+        <div class="ux-kpi ok"><b id="n-concluidos">0</b><span>Concluídos</span></div>
       </div>
       <h3>Gargalos</h3>
       <div id="lista-gargalos"></div>
     </section>
     <section id="tela-setores" class="card hidden">
       <h2>Por setor</h2>
-      <label>Equipe<select id="filtro-equipe"><option value="">Todas</option></select></label>
-      <label>Prestador<select id="filtro-prestador"><option value="">Todos</option></select></label>
-      <div id="lista-setores"></div>
+      <label class="ux-busca">Buscar OS ou veículo<input id="busca-carro" type="search" autocomplete="off"></label>
+      <div id="chips-situacao" class="ux-chips"></div>
+      <div id="chips-equipe" class="ux-chips"></div>
+      <div id="chips-prestador" class="ux-chips"></div>
+      <select id="filtro-equipe" class="hidden"><option value="">Todas</option></select>
+      <select id="filtro-prestador" class="hidden"><option value="">Todos</option></select>
+      <div id="lista-setores" class="ux-setor"></div>
+      <div id="lista-carros"></div>
     </section>
     <section id="tela-pausas" class="card hidden">
       <h2>Pausas e gargalos</h2>
@@ -114,8 +164,16 @@
       <p id="st-codigo" class="hint"></p>
       <div class="card" id="cartao-consentimento">
         <h3>Consentimento</h3>
-        <p id="st-visto" class="hint"></p>
-        <p id="st-celular" class="hint"></p>
+        <div class="ux-duas">
+          <div>
+            <h3>A blindadora vê</h3>
+            <p id="st-visto" class="hint"></p>
+          </div>
+          <div class="ux-priv">
+            <h3>Continua só no celular</h3>
+            <p id="st-celular" class="hint"></p>
+          </div>
+        </div>
         <button type="button" class="btn primary" id="btn-consentir">Concordo em compartilhar</button>
         <button type="button" class="btn ghost" id="btn-revogar">Revogar consentimento</button>
         <p id="st-revoga" class="hint"></p>
@@ -129,6 +187,7 @@
     </section>
   </div>
 </main>
+<div id="ux-toast" class="toast hidden" role="status"></div>
 <script type="module" src="gestao-producao.bundle.js"></script>
 </body>
 </html>

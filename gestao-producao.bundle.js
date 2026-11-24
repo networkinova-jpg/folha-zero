@@ -612,8 +612,14 @@ var require_gestao_tela = __commonJS({
         return (carros || []).filter((carro) => {
           const equipe = carro.equipeId || carro.equipe_id || "";
           const email = carro.prestadorEmail || carro.prestador_email || "";
+          const setor = carro.setor || "";
+          const situacao = carro.situacao || "";
+          const busca = String(escolha.busca || "").trim().toLowerCase();
           if (escolha.equipe && equipe !== escolha.equipe) return false;
           if (escolha.prestador && email !== escolha.prestador) return false;
+          if (escolha.setor && setor !== escolha.setor && logica().agruparSetor(setor) !== escolha.setor) return false;
+          if (escolha.situacao && situacao !== escolha.situacao) return false;
+          if (busca && ((carro.os || "") + " " + (carro.veiculo || "")).toLowerCase().indexOf(busca) < 0) return false;
           return true;
         });
       }
@@ -650,7 +656,7 @@ var require_gestao_tela = __commonJS({
       }
       function montarPainel(dados2, filtro2) {
         const base = dados2 || {};
-        const carros = filtrarCarros(base.carros, filtro2).map(normalizarCarro);
+        const carros = filtrarCarros(base.carros, filtro2).map((carro) => detalheCarro(carro, base.sla, base.agora));
         const ind = logica().indicadores({
           carros,
           inicio: base.inicio,
@@ -670,8 +676,29 @@ var require_gestao_tela = __commonJS({
           fora: carrosFora(carros, base.sla, base.agora),
           equipes: base.equipes || [],
           vinculos: base.vinculos || [],
-          convites: base.convites || []
+          convites: base.convites || [],
+          carros
         };
+      }
+      function detalheCarro(carro, sla, agora) {
+        const n = normalizarCarro(carro);
+        const grupo = logica().agruparSetor(n.setor);
+        const prazoItem = (sla || []).find((item) => item.setor === grupo);
+        const oficial = logica().SETORES.indexOf(grupo) >= 0;
+        const prazo = prazoItem ? Number(prazoItem.prazoHoras != null ? prazoItem.prazoHoras : prazoItem.prazo_horas_uteis) : oficial ? logica().SLA_PADRAO : null;
+        const util = logica().tempoUtil(n, agora);
+        const limite = prazo ? prazo * 60 : null;
+        const pct = util.horas && limite ? Math.min(100, Math.round(util.minutos / limite * 100)) : 0;
+        const fim = logica().FIM;
+        const tempo = !util.horas ? "Sem hora para calcular o SLA" : limite ? Math.round(util.minutos / 60) + " h \xFAteis de " + prazo + " h" : Math.round(util.minutos / 60) + " h \xFAteis. Este grupo n\xE3o tem SLA.";
+        return Object.assign({}, n, {
+          grupo,
+          pct,
+          atrasado: !!(util.horas && limite && util.minutos >= limite),
+          tempo,
+          pausasOperacao: (n.pausas || []).filter((p) => !(p.motivo === fim && !p.outro)),
+          expediente: (n.pausas || []).filter((p) => p.motivo === fim && !p.outro)
+        });
       }
       function exemploLocal() {
         return {
@@ -21693,7 +21720,8 @@ var supabaseAtual = null;
 var estado = { sessao: false, situacao: "", papel: "nenhum", demonstracao: false, sqlAusente: false };
 var telaAtual = "inicio";
 var dados = null;
-var filtro = { equipe: "", prestador: "" };
+var filtro = { equipe: "", prestador: "", setor: "", situacao: "", busca: "" };
+var toastTimer = 0;
 function texto(id, valor) {
   const el = $(id);
   if (el) el.textContent = valor == null ? "" : String(valor);
@@ -21792,8 +21820,18 @@ function desenhar() {
   document.querySelectorAll("#nav-gerente [data-tela]").forEach((el) => {
     el.classList.toggle("primary", el.getAttribute("data-tela") === telaAtual);
   });
+  texto("chip-modo", estado.demonstracao ? "Demonstra\xE7\xE3o local" : "Ao vivo");
+  texto("chip-papel", v.gerente ? "Gerente" : v.prestador ? "Prestador" : "");
   if (v.gerente && dados) pintarGerente();
   if (v.prestador) pintarPrestador();
+}
+function avisar(msg) {
+  const el = $("ux-toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add("hidden"), 2400);
 }
 function pintarGerente() {
   const painel = T.montarPainel(dados, filtro);
@@ -21809,10 +21847,27 @@ function pintarGerente() {
     "Mais tempo de pausa: " + painel.gargalos[2]
   ].forEach((linha) => gargalos.appendChild(paragrafo(linha)));
   preencherFiltros();
+  desenharChips();
   const setores = limpar("lista-setores");
   painel.porSetor.forEach((item) => {
-    setores.appendChild(paragrafo(item.setor + ": " + item.andamento + " ativos, " + item.finalizados + " conclu\xEDdos, SLA atrasado " + item.atrasado));
+    const botaoSetor = document.createElement("button");
+    botaoSetor.type = "button";
+    if (item.atrasado || filtro.setor === item.setor) botaoSetor.className = "alerta";
+    const nome = document.createElement("span");
+    nome.textContent = item.setor;
+    const extra = document.createElement("small");
+    extra.textContent = item.andamento + " ativos \xB7 " + item.finalizados + " conclu\xEDdos \xB7 SLA " + item.atrasado;
+    botaoSetor.appendChild(nome);
+    botaoSetor.appendChild(extra);
+    botaoSetor.addEventListener("click", () => {
+      filtro.setor = filtro.setor === item.setor ? "" : item.setor;
+      desenhar();
+    });
+    setores.appendChild(botaoSetor);
   });
+  const carros = limpar("lista-carros");
+  if (!painel.carros.length) carros.appendChild(paragrafo("Nenhum carro neste filtro."));
+  painel.carros.forEach((carro) => carros.appendChild(cartaoCarro(carro)));
   const pausas = limpar("lista-pausas");
   painel.pausas.forEach((item) => {
     if (!item.qtd && !item.fimExp) return;
@@ -21827,6 +21882,7 @@ function pintarGerente() {
   const sla = limpar("lista-sla");
   painel.sla.forEach((item) => {
     const bloco = document.createElement("div");
+    bloco.className = "ux-item";
     const rotulo = document.createElement("span");
     rotulo.textContent = item.setor + ": " + item.prazoHoras + " h. Dentro " + item.dentro + ", perto " + item.perto + ", atrasado " + item.atrasado;
     const campo = document.createElement("input");
@@ -21849,7 +21905,16 @@ function pintarGerente() {
   const convites = limpar("lista-convites");
   (dados.convites || []).forEach((convite) => {
     const bloco = document.createElement("div");
+    bloco.className = "ux-item";
     bloco.appendChild(paragrafo(convite.email + " " + convite.status + " " + (convite.codigo || "")));
+    bloco.appendChild(botao("Copiar c\xF3digo", async () => {
+      try {
+        await navigator.clipboard.writeText(convite.codigo || "");
+        avisar("Copiado!");
+      } catch (_) {
+        texto("st-convite", "C\xF3digo: " + (convite.codigo || ""));
+      }
+    }));
     if (convite.status === "rascunho") bloco.appendChild(botao("Cancelar", () => cancelarConvite(convite)));
     convites.appendChild(bloco);
   });
@@ -21887,6 +21952,110 @@ function preencherFiltros() {
     });
   }
 }
+function desenharChips() {
+  const situacoes = [""].concat((dados.carros || []).map((carro) => carro.situacao).filter(Boolean));
+  const unicas = situacoes.filter((item, i) => situacoes.indexOf(item) === i);
+  montarChips("chips-situacao", unicas.map((item) => ({
+    valor: item,
+    rotulo: item || "Todas as situa\xE7\xF5es",
+    ativo: filtro.situacao === item,
+    aoClicar: () => {
+      filtro.situacao = item;
+      desenhar();
+    }
+  })));
+  montarChips("chips-equipe", [{
+    valor: "",
+    rotulo: "Todas as equipes",
+    ativo: !filtro.equipe,
+    aoClicar: () => {
+      filtro.equipe = "";
+      if ($("filtro-equipe")) $("filtro-equipe").value = "";
+      desenhar();
+    }
+  }].concat((dados.equipes || []).map((item) => ({
+    valor: item.id,
+    rotulo: item.nome,
+    ativo: filtro.equipe === item.id,
+    aoClicar: () => {
+      filtro.equipe = item.id;
+      if ($("filtro-equipe")) $("filtro-equipe").value = item.id;
+      desenhar();
+    }
+  }))));
+  montarChips("chips-prestador", [{
+    valor: "",
+    rotulo: "Todos os prestadores",
+    ativo: !filtro.prestador,
+    aoClicar: () => {
+      filtro.prestador = "";
+      if ($("filtro-prestador")) $("filtro-prestador").value = "";
+      desenhar();
+    }
+  }].concat((dados.vinculos || []).map((item) => ({
+    valor: item.email,
+    rotulo: item.nome || item.email,
+    ativo: filtro.prestador === item.email,
+    aoClicar: () => {
+      filtro.prestador = item.email;
+      if ($("filtro-prestador")) $("filtro-prestador").value = item.email;
+      desenhar();
+    }
+  }))));
+}
+function montarChips(id, itens) {
+  const caixa = $(id);
+  if (!caixa) return;
+  caixa.replaceChildren();
+  itens.forEach((item) => {
+    const el = document.createElement("button");
+    el.type = "button";
+    if (item.ativo) el.className = "ativo";
+    el.textContent = item.rotulo;
+    el.addEventListener("click", item.aoClicar);
+    caixa.appendChild(el);
+  });
+}
+function cartaoCarro(carro) {
+  const bloco = document.createElement("article");
+  bloco.className = "ux-item";
+  const os = document.createElement("div");
+  os.className = "ux-os";
+  os.textContent = carro.os || "Sem OS";
+  bloco.appendChild(os);
+  const veiculo = document.createElement("p");
+  veiculo.textContent = carro.veiculo || "Ve\xEDculo n\xE3o informado";
+  bloco.appendChild(veiculo);
+  bloco.appendChild(selo(carro.setor));
+  bloco.appendChild(selo(carro.situacao));
+  if (carro.prestadorNome) bloco.appendChild(selo(carro.prestadorNome));
+  if (String(carro.tempo || "").indexOf(" de ") >= 0) {
+    const barra = document.createElement("div");
+    barra.className = "ux-bar" + (carro.atrasado ? " atrasado" : "");
+    const marca = document.createElement("i");
+    marca.style.width = Math.max(0, Math.min(100, carro.pct || 0)) + "%";
+    barra.appendChild(marca);
+    bloco.appendChild(barra);
+  }
+  const tempo = document.createElement("p");
+  tempo.className = "hint";
+  tempo.textContent = carro.tempo;
+  bloco.appendChild(tempo);
+  (carro.pausasOperacao || []).forEach((pausa) => bloco.appendChild(paragrafo("Pausa: " + (pausa.outro || pausa.motivo || "sem motivo"))));
+  (carro.expediente || []).forEach(() => bloco.appendChild(seloFim()));
+  return bloco;
+}
+function selo(rotulo) {
+  const el = document.createElement("span");
+  el.className = "ux-selo";
+  el.textContent = rotulo || "";
+  return el;
+}
+function seloFim() {
+  const el = selo("Fim de expediente");
+  el.classList.add("fim");
+  return el;
+}
 function pintarPrestador() {
   texto("st-prestador", dados && dados.empresaNome ? "Empresa: " + dados.empresaNome + ". Status: " + (dados.statusVinculo || "sem v\xEDnculo") : "Voc\xEA ainda n\xE3o tem v\xEDnculo. Aceite um c\xF3digo de convite.");
   texto("st-visto", T.textoConsentimento(dados && dados.empresaNome));
@@ -21897,7 +22066,7 @@ function pintarPrestador() {
 }
 function entrarDemonstracao() {
   dados = T.exemploLocal();
-  filtro = { equipe: "", prestador: "" };
+  filtro = { equipe: "", prestador: "", setor: "", situacao: "", busca: "" };
   estado.demonstracao = true;
   estado.situacao = "";
   estado.papel = "gerente";
@@ -22056,6 +22225,19 @@ document.querySelectorAll("#nav-gerente [data-tela]").forEach((el) => {
     telaAtual = el.getAttribute("data-tela");
     desenhar();
   });
+});
+$("btn-sair-topo").addEventListener("click", sair);
+$("btn-sair-demo").addEventListener("click", () => {
+  estado.demonstracao = false;
+  estado.papel = "";
+  dados = null;
+  filtro = { equipe: "", prestador: "", setor: "", situacao: "", busca: "" };
+  if (estado.sessao) conferir();
+  else desenhar();
+});
+$("busca-carro").addEventListener("input", () => {
+  filtro.busca = $("busca-carro").value;
+  desenhar();
 });
 $("btn-demo-entrada").addEventListener("click", entrarDemonstracao);
 $("btn-demo-sql").addEventListener("click", entrarDemonstracao);

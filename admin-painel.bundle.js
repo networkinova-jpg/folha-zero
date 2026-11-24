@@ -162,6 +162,130 @@ var require_login_google = __commonJS({
   }
 });
 
+// acesso-senha.js
+var require_acesso_senha = __commonJS({
+  "acesso-senha.js"(exports, module) {
+    (function(root) {
+      const MIN_SENHA = 6;
+      function emailValido(email) {
+        const texto2 = String(email || "").trim();
+        if (!texto2 || texto2.length > 320 || /\s/.test(texto2)) return false;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(texto2);
+      }
+      function classificarEntrada(email, senha) {
+        if (!emailValido(email)) return { ok: false, motivo: "email_invalido" };
+        if (String(senha || "").length < MIN_SENHA) return { ok: false, motivo: "senha_curta" };
+        return { ok: true, email: String(email).trim(), senha: String(senha) };
+      }
+      function classificarRecuperacao(email) {
+        if (!emailValido(email)) return { ok: false, motivo: "email_invalido" };
+        return { ok: true, email: String(email).trim() };
+      }
+      function mensagem(motivo) {
+        if (motivo === "email_invalido") return "Digite um e-mail v\xE1lido.";
+        if (motivo === "senha_curta") return "A senha precisa ter pelo menos 6 caracteres.";
+        if (motivo === "credencial_invalida") return "E-mail ou senha n\xE3o conferem.";
+        if (motivo === "confirmacao_pendente") return "Falta confirmar o e-mail. Veja a caixa de entrada.";
+        if (motivo === "cadastro_enviado") return "Enviamos a confirma\xE7\xE3o para o seu e-mail. Abra o link para concluir a conta.";
+        if (motivo === "recuperacao_enviada") return "Se este e-mail tiver conta, enviamos o link para criar uma senha nova.";
+        if (motivo === "entrou") return "Sess\xE3o iniciada.";
+        if (motivo === "rede") return "N\xE3o foi poss\xEDvel falar com o projeto. Tente de novo.";
+        return "N\xE3o foi poss\xEDvel concluir. Tente de novo.";
+      }
+      function motivoDoErro(erro) {
+        if (!erro) return "outro";
+        if (typeof erro === "string") return motivoDoErro({ message: erro });
+        const msg = String(erro.message || erro.msg || erro.error_description || "").toLowerCase();
+        const code = String(erro.code || erro.error_code || erro.name || "").toLowerCase();
+        const status = Number(erro.status != null ? erro.status : erro.statusCode);
+        if (erro.name === "TypeError" || code === "authretryablefetcherror" || msg.includes("failed to fetch") || msg.includes("network") || status === 0) return "rede";
+        if (code === "invalid_credentials" || msg.includes("invalid login") || msg.includes("invalid credentials")) return "credencial_invalida";
+        if (code === "email_not_confirmed" || msg.includes("email not confirmed") || msg.includes("not confirmed")) return "confirmacao_pendente";
+        if (code === "weak_password" || msg.includes("at least 6") || msg.includes("password should be")) return "senha_curta";
+        if (code === "validation_failed" || msg.includes("unable to validate email") || msg.includes("invalid email")) return "email_invalido";
+        if (status >= 500) return "rede";
+        return "outro";
+      }
+      function retornoDaPagina(location2) {
+        const u = new URL(location2.href);
+        return u.origin + u.pathname;
+      }
+      function resposta(motivo, ok) {
+        return { ok: ok === true, motivo, mensagem: mensagem(motivo) };
+      }
+      async function entrar(cliente2, email, senha) {
+        const pedido = classificarEntrada(email, senha);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        try {
+          const { data, error } = await cliente2.auth.signInWithPassword({ email: pedido.email, password: pedido.senha });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "credencial_invalida" : motivoDoErro(error), false);
+          const usuario = data && data.user;
+          if (!data || !data.session) {
+            if (usuario && usuario.email_confirmed_at == null && usuario.confirmed_at == null) return resposta("confirmacao_pendente", false);
+            return resposta("confirmacao_pendente", false);
+          }
+          return resposta("entrou", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      async function criarConta(cliente2, email, senha, location2) {
+        const pedido = classificarEntrada(email, senha);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        let redirectTo;
+        try {
+          redirectTo = retornoDaPagina(location2);
+        } catch (_) {
+          return resposta("outro", false);
+        }
+        try {
+          const { data, error } = await cliente2.auth.signUp({
+            email: pedido.email,
+            password: pedido.senha,
+            options: { emailRedirectTo: redirectTo }
+          });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "rede" : motivoDoErro(error), false);
+          if (data && data.session) return resposta("entrou", true);
+          return resposta("cadastro_enviado", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      async function recuperarSenha(cliente2, email, location2) {
+        const pedido = classificarRecuperacao(email);
+        if (!pedido.ok) return resposta(pedido.motivo, false);
+        let redirectTo;
+        try {
+          redirectTo = retornoDaPagina(location2);
+        } catch (_) {
+          return resposta("outro", false);
+        }
+        try {
+          const { error } = await cliente2.auth.resetPasswordForEmail(pedido.email, { redirectTo });
+          if (error) return resposta(motivoDoErro(error) === "outro" ? "rede" : motivoDoErro(error), false);
+          return resposta("recuperacao_enviada", true);
+        } catch (erro) {
+          return resposta(motivoDoErro(erro) === "outro" ? "rede" : motivoDoErro(erro), false);
+        }
+      }
+      const api = {
+        MIN_SENHA,
+        emailValido,
+        classificarEntrada,
+        classificarRecuperacao,
+        mensagem,
+        motivoDoErro,
+        retornoDaPagina,
+        entrar,
+        criarConta,
+        recuperarSenha
+      };
+      root.FolhaAcessoSenha = api;
+      if (typeof module !== "undefined" && module.exports) module.exports = api;
+    })(typeof globalThis !== "undefined" ? globalThis : exports);
+  }
+});
+
 // admin-painel-logica.js
 var require_admin_painel_logica = __commonJS({
   "admin-painel-logica.js"(exports, module) {
@@ -169,7 +293,7 @@ var require_admin_painel_logica = __commonJS({
       const FRASE_RECUSA = "Esta conta n\xE3o \xE9 do propriet\xE1rio.";
       const FRASE_EXPIRADA = "Sua sess\xE3o expirou. Entre de novo com sua conta Google.";
       const FRASE_TEMPORARIO = "N\xE3o foi poss\xEDvel conferir agora. Tente de novo.";
-      const TELAS = ["entrada", "inicio", "pedidos", "avulsos", "empresas", "convites", "pessoas", "conta"];
+      const TELAS = ["entrada", "inicio", "pedidos", "avulsos", "empresas", "convites", "pessoas", "licencas", "conta"];
       function vista(sessao, dono, escolhida, situacao) {
         const base = { entrada: false, recusa: false, painel: false, expirada: false, temporario: false, botoes: [] };
         if (situacao === "sessao_expirada") {
@@ -21141,13 +21265,17 @@ if (shouldShowDeprecationWarning()) console.warn("\u26A0\uFE0F  Node.js 20 and b
 
 // admin-painel.js
 var import_login_google = __toESM(require_login_google());
+var import_acesso_senha = __toESM(require_acesso_senha());
 var import_admin_painel_logica = __toESM(require_admin_painel_logica());
 import { FOLHA_ZERO_TESTE } from "./acesso-teste-config.js";
 var L = globalThis.FolhaLoginGoogle;
+var S = globalThis.FolhaAcessoSenha;
 var R = globalThis.FolhaPainelLogica;
 var $ = (id) => document.getElementById(id);
 var telaAtual = "inicio";
 var supabaseAtual = null;
+var cacheListas = { pessoas: [], avulsos: [], empresas: [], pedidos: [] };
+var toastTimer = 0;
 function texto(id, valor) {
   const el = $(id);
   if (el) el.textContent = valor == null ? "" : String(valor);
@@ -21161,11 +21289,42 @@ function cliente() {
   });
 }
 function mostrar(tipo) {
+  if (tipo !== "dono") texto("chip-conta", "");
   if (tipo === "dono") aplicarVista({ sessao: true, dono: true });
   else if (tipo === "recusa") aplicarVista({ sessao: true, dono: false });
   else if (tipo === "sessao_expirada") aplicarVista({ sessao: true, dono: false, situacao: "sessao_expirada" });
   else if (tipo === "erro_temporario") aplicarVista({ sessao: true, dono: false, situacao: "erro_temporario" });
   else aplicarVista({ sessao: false, dono: false });
+}
+function avisar(msg) {
+  const el = $("ux-toast");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add("hidden"), 2400);
+}
+function selo(status) {
+  const s = String(status || "").toLowerCase();
+  const el = document.createElement("span");
+  let cor = "ux-mut";
+  if (s === "ativo" || s === "ativa" || s === "aprovado") cor = "ux-ok";
+  else if (s.indexOf("degust") >= 0 || s === "pendente" || s === "rascunho" || s === "suspenso" || s === "suspensa") cor = "ux-warn";
+  else if (s === "revogado" || s === "revogada" || s === "vencida" || s === "recusado") cor = "ux-err";
+  el.className = "ux-selo " + cor;
+  el.textContent = status || "sem status";
+  return el;
+}
+function vazio(caixa, msg) {
+  const p = document.createElement("p");
+  p.className = "empty";
+  p.textContent = msg;
+  caixa.appendChild(p);
+}
+function cartao() {
+  const el = document.createElement("div");
+  el.className = "ux-item";
+  return el;
 }
 function aplicarVista(estado) {
   const v = R.vista(estado.sessao, estado.dono, telaAtual, estado.situacao);
@@ -21236,18 +21395,72 @@ async function carregar(supabase) {
   texto("n-vencem", resumo.vencem);
   texto("n-ativas", resumo.pessoas);
   texto("n-carros", resumo.carros);
+  texto("c-pedidos", resumo.pedidos);
   const euR = await chamar("painel_eu");
   if (!euR.ok) return mostrar(euR.tipo);
   const eu = euR.data;
+  texto("chip-conta", eu && eu.email ? eu.email : "Propriet\xE1rio");
   texto("st-conta", eu && eu.dono ? "Voc\xEA \xE9 o propriet\xE1rio. Esta conta n\xE3o tem prazo. E-mail da sess\xE3o: " + (eu.email || "n\xE3o informado") : R.FRASE_RECUSA);
   const pedidosR = await chamar("painel_listar_pedidos");
   if (!pedidosR.ok) return mostrar(pedidosR.tipo);
-  const pedidos = pedidosR.data;
-  const caixaPedidos = $("lista-pedidos");
-  caixaPedidos.replaceChildren();
-  (pedidos || []).forEach((item) => {
-    const bloco = document.createElement("div");
-    bloco.appendChild(linha([item.nome || item.email, item.tipo, item.status]));
+  cacheListas.pedidos = pedidosR.data || [];
+  desenharPedidos(supabase);
+  const avulsosR = await chamar("painel_listar_avulsos");
+  if (!avulsosR.ok) return mostrar(avulsosR.tipo);
+  cacheListas.avulsos = avulsosR.data || [];
+  desenharAvulsos(supabase);
+  const empresasR = await chamar("painel_listar_empresas");
+  if (!empresasR.ok) return mostrar(empresasR.tipo);
+  cacheListas.empresas = empresasR.data || [];
+  desenharEmpresas(supabase);
+  desenharLicencas(supabase);
+  const pessoasR = await chamar("painel_listar_pessoas");
+  if (!pessoasR.ok) return mostrar(pessoasR.tipo);
+  cacheListas.pessoas = pessoasR.data || [];
+  desenharPessoas();
+  const convitesR = await chamar("painel_listar_convites");
+  if (!convitesR.ok) return mostrar(convitesR.tipo);
+  const convites = convitesR.data;
+  const caixaConvites = $("lista-convites");
+  caixaConvites.replaceChildren();
+  if (!(convites || []).length) vazio(caixaConvites, "Nenhum convite ainda. Crie um c\xF3digo e envie voc\xEA mesmo.");
+  (convites || []).forEach((item) => {
+    const bloco = cartao();
+    const topo = document.createElement("div");
+    topo.className = "ux-linha";
+    const nome = document.createElement("b");
+    nome.textContent = item.email || "Sem e-mail";
+    topo.appendChild(nome);
+    topo.appendChild(selo(item.status));
+    bloco.appendChild(topo);
+    bloco.appendChild(linha([item.tipo, item.codigo]));
+    const copiar = botao("Copiar c\xF3digo", async () => {
+      try {
+        await navigator.clipboard.writeText(item.codigo || "");
+        copiar.textContent = "Copiado!";
+        avisar("Copiado!");
+      } catch (_) {
+        texto("st-convite", "C\xF3digo: " + item.codigo);
+      }
+    });
+    bloco.appendChild(copiar);
+    caixaConvites.appendChild(bloco);
+  });
+}
+function desenharPedidos(supabase) {
+  const caixa = $("lista-pedidos");
+  caixa.replaceChildren();
+  if (!cacheListas.pedidos.length) vazio(caixa, "Nenhum pedido esperando.");
+  cacheListas.pedidos.forEach((item) => {
+    const bloco = cartao();
+    const topo = document.createElement("div");
+    topo.className = "ux-linha";
+    const nome = document.createElement("b");
+    nome.textContent = item.nome || item.email || "Sem nome";
+    topo.appendChild(nome);
+    topo.appendChild(selo(item.status));
+    bloco.appendChild(topo);
+    bloco.appendChild(linha([item.email, item.tipo]));
     if (item.status === "pendente") {
       const acoes = document.createElement("div");
       acoes.className = "actions";
@@ -21255,99 +21468,131 @@ async function carregar(supabase) {
       acoes.appendChild(botao("Recusar", () => decidir(supabase, item.id, false)));
       bloco.appendChild(acoes);
     }
-    caixaPedidos.appendChild(bloco);
+    caixa.appendChild(bloco);
   });
-  const avulsosR = await chamar("painel_listar_avulsos");
-  if (!avulsosR.ok) return mostrar(avulsosR.tipo);
-  const avulsos = avulsosR.data;
-  const caixaAvulsos = $("lista-avulsos");
-  caixaAvulsos.replaceChildren();
-  (avulsos || []).forEach((item) => {
-    const bloco = document.createElement("div");
+}
+function desenharAvulsos(supabase) {
+  const caixa = $("lista-avulsos");
+  caixa.replaceChildren();
+  if (!cacheListas.avulsos.length) vazio(caixa, "Nenhuma pessoa avulsa nesta lista.");
+  cacheListas.avulsos.forEach((item) => {
+    const bloco = cartao();
+    const topo = document.createElement("div");
+    topo.className = "ux-linha";
+    const nome = document.createElement("b");
+    nome.textContent = item.nome || item.email || "Sem nome";
+    topo.appendChild(nome);
+    topo.appendChild(selo(item.status));
+    bloco.appendChild(topo);
     bloco.appendChild(linha([
-      item.nome || item.email,
-      item.status,
+      item.email,
       item.degustacao_fim ? "degusta\xE7\xE3o at\xE9 " + item.degustacao_fim : "",
-      item.licenca_validade ? "licen\xE7a at\xE9 " + item.licenca_validade : "",
+      item.licenca_validade ? "licen\xE7a at\xE9 " + item.licenca_validade : "sem licen\xE7a",
       item.copia_existe ? "backup " + (item.copia_atualizado_em || "") : "sem backup"
     ]));
-    const acoes = document.createElement("div");
-    acoes.className = "actions";
-    const validade = document.createElement("input");
-    validade.type = "date";
-    acoes.appendChild(validade);
-    acoes.appendChild(botao("Marcar licen\xE7a", () => {
-      if (!validade.value) return;
-      return agir(supabase, "painel_licenciar_avulso", { p_user: item.user_id, p_validade: validade.value });
-    }));
-    acoes.appendChild(botao("Degusta\xE7\xE3o de 20 dias", () => agir(supabase, "painel_degustar_avulso", { p_user: item.user_id })));
-    acoes.appendChild(botao("Suspender", () => agir(supabase, "painel_situacao_avulso", { p_user: item.user_id, p_status: "suspenso" })));
-    acoes.appendChild(botao("Revogar", () => agir(supabase, "painel_situacao_avulso", { p_user: item.user_id, p_status: "revogado" })));
-    bloco.appendChild(acoes);
-    caixaAvulsos.appendChild(bloco);
+    bloco.appendChild(acoesAvulso(supabase, item));
+    caixa.appendChild(bloco);
   });
-  const empresasR = await chamar("painel_listar_empresas");
-  if (!empresasR.ok) return mostrar(empresasR.tipo);
-  const empresas = empresasR.data;
-  const caixaEmpresas = $("lista-empresas");
-  caixaEmpresas.replaceChildren();
-  (empresas || []).forEach((item) => {
-    if (!R.empresaAceita(item.nome)) return;
-    const bloco = document.createElement("div");
-    bloco.appendChild(linha([item.nome, item.gerente_email, item.status, item.licenca_validade ? "at\xE9 " + item.licenca_validade : ""]));
-    const validade = document.createElement("input");
-    validade.type = "date";
+}
+function acoesAvulso(supabase, item) {
+  const acoes = document.createElement("div");
+  acoes.className = "actions";
+  const validade = document.createElement("input");
+  validade.type = "date";
+  acoes.appendChild(validade);
+  acoes.appendChild(botao("Marcar licen\xE7a", () => {
+    if (!validade.value) return avisar("Escolha a data da licen\xE7a.");
+    return agir(supabase, "painel_licenciar_avulso", { p_user: item.user_id, p_validade: validade.value });
+  }));
+  acoes.appendChild(botao("Degusta\xE7\xE3o de 20 dias", () => agir(supabase, "painel_degustar_avulso", { p_user: item.user_id })));
+  acoes.appendChild(botao("Suspender", () => agir(supabase, "painel_situacao_avulso", { p_user: item.user_id, p_status: "suspenso" })));
+  acoes.appendChild(botao("Revogar", () => agir(supabase, "painel_situacao_avulso", { p_user: item.user_id, p_status: "revogado" })));
+  return acoes;
+}
+function desenharEmpresas(supabase) {
+  const caixa = $("lista-empresas");
+  caixa.replaceChildren();
+  const lista = cacheListas.empresas.filter((item) => R.empresaAceita(item.nome));
+  if (!lista.length) vazio(caixa, "Nenhuma empresa nesta lista.");
+  lista.forEach((item) => {
+    const bloco = cartao();
+    const topo = document.createElement("div");
+    topo.className = "ux-linha";
+    const nome = document.createElement("b");
+    nome.textContent = item.nome || "Sem nome";
+    topo.appendChild(nome);
+    topo.appendChild(selo(item.status));
+    bloco.appendChild(topo);
+    bloco.appendChild(linha([item.gerente_email, item.licenca_validade ? "licen\xE7a at\xE9 " + item.licenca_validade : "sem licen\xE7a"]));
     const acoes = document.createElement("div");
     acoes.className = "actions";
+    const validade = document.createElement("input");
+    validade.type = "date";
     acoes.appendChild(validade);
     acoes.appendChild(botao("Marcar licen\xE7a", () => {
-      if (!validade.value) return;
+      if (!validade.value) return avisar("Escolha a data da licen\xE7a.");
       return agir(supabase, "painel_licenciar_empresa", { p_empresa: item.id, p_validade: validade.value });
     }));
     acoes.appendChild(botao("Suspender", () => agir(supabase, "painel_situacao_empresa", { p_empresa: item.id, p_status: "suspenso" })));
     acoes.appendChild(botao("Revogar", () => agir(supabase, "painel_situacao_empresa", { p_empresa: item.id, p_status: "revogado" })));
     bloco.appendChild(acoes);
-    caixaEmpresas.appendChild(bloco);
+    caixa.appendChild(bloco);
   });
-  const pessoasR = await chamar("painel_listar_pessoas");
-  if (!pessoasR.ok) return mostrar(pessoasR.tipo);
-  const pessoas = pessoasR.data;
-  const caixaPessoas = $("lista-pessoas");
-  caixaPessoas.replaceChildren();
-  (pessoas || []).forEach((item) => {
+}
+function desenharLicencas(supabase) {
+  const caixa = $("lista-licencas");
+  if (!caixa) return;
+  caixa.replaceChildren();
+  const pessoas = cacheListas.avulsos.map((item) => ({
+    titulo: item.nome || item.email,
+    status: item.licenca_status || (item.licenca_validade ? "ativa" : item.degustacao_fim ? "degusta\xE7\xE3o" : "sem prazo"),
+    detalhe: item.licenca_validade ? "licen\xE7a at\xE9 " + item.licenca_validade : item.degustacao_fim ? "degusta\xE7\xE3o at\xE9 " + item.degustacao_fim : "Sem prazo definido"
+  }));
+  const empresas = cacheListas.empresas.filter((item) => R.empresaAceita(item.nome)).map((item) => ({
+    titulo: item.nome,
+    status: item.licenca_status || (item.licenca_validade ? "ativa" : "sem prazo"),
+    detalhe: item.licenca_validade ? "licen\xE7a at\xE9 " + item.licenca_validade : "Sem prazo definido"
+  }));
+  const tudo = pessoas.concat(empresas);
+  if (!tudo.length) vazio(caixa, "Nenhuma licen\xE7a para mostrar. Marque o prazo na pessoa ou na empresa.");
+  tudo.forEach((item) => {
+    const bloco = cartao();
+    const topo = document.createElement("div");
+    topo.className = "ux-linha";
+    const nome = document.createElement("b");
+    nome.textContent = item.titulo || "Sem nome";
+    topo.appendChild(nome);
+    topo.appendChild(selo(item.status));
+    bloco.appendChild(topo);
+    bloco.appendChild(linha([item.detalhe]));
+    caixa.appendChild(bloco);
+  });
+  void supabase;
+}
+function desenharPessoas() {
+  const caixa = $("lista-pessoas");
+  const q = ($("busca-pessoas") && $("busca-pessoas").value || "").trim().toLowerCase();
+  caixa.replaceChildren();
+  const lista = cacheListas.pessoas.filter((item) => {
     const visivel = R.pessoaVisivel(item);
-    const bloco = document.createElement("div");
+    if (!q) return true;
+    return (visivel.nome + " " + visivel.email).toLowerCase().indexOf(q) >= 0;
+  });
+  if (!lista.length) vazio(caixa, q ? "Nenhuma pessoa com esse nome ou e-mail." : "Nenhuma pessoa cadastrada ainda.");
+  lista.forEach((item) => {
+    const visivel = R.pessoaVisivel(item);
+    const bloco = cartao();
     const nome = document.createElement("b");
     nome.textContent = visivel.nome;
     const email = document.createElement("span");
     email.textContent = visivel.email;
-    const extra = document.createElement("span");
-    extra.textContent = (visivel.ativa ? "ativa" : "inativa") + (visivel.ultimo ? " " + visivel.ultimo : "");
     bloco.appendChild(nome);
     bloco.appendChild(document.createTextNode(" "));
     bloco.appendChild(email);
     bloco.appendChild(document.createTextNode(" "));
-    bloco.appendChild(extra);
-    caixaPessoas.appendChild(bloco);
-  });
-  const convitesR = await chamar("painel_listar_convites");
-  if (!convitesR.ok) return mostrar(convitesR.tipo);
-  const convites = convitesR.data;
-  const caixaConvites = $("lista-convites");
-  caixaConvites.replaceChildren();
-  (convites || []).forEach((item) => {
-    const bloco = document.createElement("div");
-    bloco.appendChild(linha([item.email, item.tipo, item.status, item.codigo]));
-    const copiar = botao("Copiar c\xF3digo", async () => {
-      try {
-        await navigator.clipboard.writeText(item.codigo);
-        texto("st-convite", "C\xF3digo copiado.");
-      } catch (_) {
-        texto("st-convite", "C\xF3digo: " + item.codigo);
-      }
-    });
-    bloco.appendChild(copiar);
-    caixaConvites.appendChild(bloco);
+    bloco.appendChild(selo(visivel.ativa ? "ativa" : "inativa"));
+    if (visivel.ultimo) bloco.appendChild(linha(["\xDAltimo acesso " + visivel.ultimo]));
+    caixa.appendChild(bloco);
   });
 }
 function botao(rotulo, aoClicar) {
@@ -21412,6 +21657,9 @@ async function iniciar() {
     mostrar("entrada");
     return;
   }
+  await abrirComoDono(supabase);
+}
+async function abrirComoDono(supabase) {
   const euR = await criarChamada(supabase)("painel_eu");
   if (!euR.ok) return mostrar(euR.tipo);
   if (!euR.data || euR.data.dono !== true) return mostrar("recusa");
@@ -21454,6 +21702,25 @@ $("form-empresa").addEventListener("submit", async (ev) => {
   await carregar(supabase);
 });
 $("btn-sair").addEventListener("click", sair);
+$("btn-sair-topo").addEventListener("click", sair);
+$("btn-atualizar").addEventListener("click", async () => {
+  if (!supabaseAtual) return;
+  avisar("Atualizando.");
+  await carregar(supabaseAtual);
+  avisar("Painel atualizado.");
+});
+$("busca-pessoas").addEventListener("input", desenharPessoas);
+$("form-entrar").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const supabase = cliente();
+  if (!supabase) return;
+  const r = await S.entrar(supabase, $("acesso-email").value, $("acesso-senha").value);
+  $("acesso-senha").value = "";
+  texto("st-login", r.mensagem);
+  if (!(r.ok && r.motivo === "entrou")) return;
+  supabaseAtual = supabase;
+  await abrirComoDono(supabase);
+});
 $("btn-sair-recusa").addEventListener("click", sair);
 $("btn-sair-expirada").addEventListener("click", sair);
 $("btn-entrar-de-novo").addEventListener("click", entrarDeNovo);

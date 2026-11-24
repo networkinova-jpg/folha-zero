@@ -3,7 +3,7 @@
   const FRASE_RECUSA = 'Esta conta não é do proprietário.';
   const FRASE_EXPIRADA = 'Sua sessão expirou. Entre de novo com sua conta Google.';
   const FRASE_TEMPORARIO = 'Não foi possível conferir agora. Tente de novo.';
-  const TELAS = ['entrada', 'inicio', 'pedidos', 'avulsos', 'empresas', 'convites', 'pessoas', 'conta'];
+  const TELAS = ['entrada', 'inicio', 'pedidos', 'avulsos', 'empresas', 'convites', 'pessoas', 'licencas', 'conta'];
 
   function vista(sessao, dono, escolhida, situacao) {
     const base = { entrada: false, recusa: false, painel: false, expirada: false, temporario: false, botoes: [] };

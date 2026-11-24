@@ -52,8 +52,14 @@
     return (carros || []).filter((carro) => {
       const equipe = carro.equipeId || carro.equipe_id || '';
       const email = carro.prestadorEmail || carro.prestador_email || '';
+      const setor = carro.setor || '';
+      const situacao = carro.situacao || '';
+      const busca = String(escolha.busca || '').trim().toLowerCase();
       if (escolha.equipe && equipe !== escolha.equipe) return false;
       if (escolha.prestador && email !== escolha.prestador) return false;
+      if (escolha.setor && setor !== escolha.setor && logica().agruparSetor(setor) !== escolha.setor) return false;
+      if (escolha.situacao && situacao !== escolha.situacao) return false;
+      if (busca && ((carro.os || '') + ' ' + (carro.veiculo || '')).toLowerCase().indexOf(busca) < 0) return false;
       return true;
     });
   }
@@ -91,7 +97,7 @@
 
   function montarPainel(dados, filtro) {
     const base = dados || {};
-    const carros = filtrarCarros(base.carros, filtro).map(normalizarCarro);
+    const carros = filtrarCarros(base.carros, filtro).map((carro) => detalheCarro(carro, base.sla, base.agora));
     const ind = logica().indicadores({
       carros: carros,
       inicio: base.inicio,
@@ -111,8 +117,34 @@
       fora: carrosFora(carros, base.sla, base.agora),
       equipes: base.equipes || [],
       vinculos: base.vinculos || [],
-      convites: base.convites || []
+      convites: base.convites || [],
+      carros: carros
     };
+  }
+
+  function detalheCarro(carro, sla, agora) {
+    const n = normalizarCarro(carro);
+    const grupo = logica().agruparSetor(n.setor);
+    const prazoItem = (sla || []).find((item) => item.setor === grupo);
+    const oficial = logica().SETORES.indexOf(grupo) >= 0;
+    const prazo = prazoItem
+      ? Number(prazoItem.prazoHoras != null ? prazoItem.prazoHoras : prazoItem.prazo_horas_uteis)
+      : (oficial ? logica().SLA_PADRAO : null);
+    const util = logica().tempoUtil(n, agora);
+    const limite = prazo ? prazo * 60 : null;
+    const pct = util.horas && limite ? Math.min(100, Math.round((util.minutos / limite) * 100)) : 0;
+    const fim = logica().FIM;
+    const tempo = !util.horas
+      ? 'Sem hora para calcular o SLA'
+      : (limite ? Math.round(util.minutos / 60) + ' h úteis de ' + prazo + ' h' : Math.round(util.minutos / 60) + ' h úteis. Este grupo não tem SLA.');
+    return Object.assign({}, n, {
+      grupo: grupo,
+      pct: pct,
+      atrasado: !!(util.horas && limite && util.minutos >= limite),
+      tempo: tempo,
+      pausasOperacao: (n.pausas || []).filter((p) => !(p.motivo === fim && !p.outro)),
+      expediente: (n.pausas || []).filter((p) => p.motivo === fim && !p.outro)
+    });
   }
 
   function exemploLocal() {
