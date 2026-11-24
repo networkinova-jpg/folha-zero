@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Folha Zero: painel do proprietário</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f2b134'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='14' font-family='sans-serif' font-weight='700' fill='%230f3d5e'%3EFZ%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<style>
+body.ux main{max-width:1080px;padding-bottom:32px}
+body.ux .ux-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+body.ux .ux-top .brand{flex:1;min-width:200px}
+body.ux .ux-marca{font-weight:800}
+body.ux .ux-chip{background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.ux .ux-chip:empty{display:none}
+@media(max-width:720px){body.ux .ux-top .brand{flex-basis:100%}}
+body.ux .ux-top .btn{min-height:40px;background:#fff;color:var(--pri);display:inline-flex;align-items:center;gap:6px}
+body.ux .ux-centro{max-width:440px;margin:28px auto;padding:22px}
+body.ux .ux-centro h2{font-size:22px}
+body.ux .ux-nav{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px;padding-bottom:2px}
+body.ux .ux-nav .btn{white-space:nowrap;min-height:44px;display:inline-flex;align-items:center;gap:6px;width:auto}
+body.ux .ux-nav svg{width:18px;height:18px;flex:none}
+body.ux .ux-nav b{background:var(--acc);color:var(--pri);border-radius:999px;min-width:20px;padding:0 6px;font-size:12px}
+body.ux .ux-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+body.ux .ux-kpi{background:#fff;border-radius:16px;padding:16px 14px;box-shadow:0 8px 24px rgba(15,61,94,.07)}
+body.ux .ux-kpi b{display:block;font-size:34px;line-height:1;color:var(--pri)}
+body.ux .ux-kpi span{display:block;font-weight:800;margin-top:8px}
+body.ux .ux-kpi small{display:block;color:var(--mut);font-size:12px;font-weight:500;margin-top:4px;line-height:1.35}
+@media(min-width:900px){body.ux .ux-kpis{grid-template-columns:repeat(3,1fr)}}
+body.ux .ux-item{background:#fff;border-radius:14px;padding:12px 14px;margin:8px 0;box-shadow:0 1px 3px rgba(15,61,94,.08)}
+body.ux .ux-item .ux-linha{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap}
+body.ux .ux-selo{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800;margin:0 4px 4px 0}
+body.ux .ux-ok{background:#d1fae5;color:#065f46}
+body.ux .ux-warn{background:#fef3c7;color:#92400e}
+body.ux .ux-err{background:#fee2e2;color:#991b1b}
+body.ux .ux-mut{background:#e2e8f0;color:#334155}
+body.ux .ux-info{background:#dbeafe;color:#1e40af}
+body.ux .ux-busca{margin-bottom:8px}
+body.ux svg.ux-g{width:18px;height:18px;vertical-align:-3px;margin-right:6px}
+</style>
+</head>
+<body class="ux">
+<header class="topbar ux-top">
+  <div class="brand"><span class="logo">FZ</span><div><strong class="ux-marca">Folha Zero · Painel do Proprietário</strong><small>Site de teste. Não é o app do dia a dia.</small></div></div>
+  <span id="chip-conta" class="ux-chip"></span>
+  <button type="button" class="btn" id="btn-atualizar">Atualizar</button>
+  <button type="button" class="btn" id="btn-sair-topo">Sair</button>
+</header>
+<main>
+  <section id="tela-entrada" class="card ux-centro">
+    <h2>Entrada</h2>
+    <p class="hint">Entre com a conta do proprietário. O Google é o caminho principal. E-mail e senha também servem nesta página de teste.</p>
+    <p id="st-entrada" class="hint"></p>
+    <button type="button" class="btn primary big" id="btn-google">
+      <svg class="ux-g" viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12 11v3h6.6c-.3 1.6-1.9 4.6-6.6 4.6A7.6 7.6 0 1 1 12 4.4c2.1 0 3.6.9 4.4 1.7l3-2.9C17.5 1.4 15 0 12 0 5.4 0 0 5.4 0 12s5.4 12 12 12c6.9 0 11.5-4.9 11.5-11.8 0-.8-.1-1.4-.2-2.2H12z"/></svg>
+      Entrar com Google
+    </button>
+    <form id="form-entrar">
+      <label>E-mail<input id="acesso-email" type="email" autocomplete="username"></label>
+      <label>Senha<input id="acesso-senha" type="password" autocomplete="current-password"></label>
+      <button type="submit" class="btn primary big">Entrar com e-mail</button>
+    </form>
+    <p id="st-login" class="hint"></p>
+  </section>
+  <section id="st-recusa" class="card ux-centro hidden">
+    <h2>Sem acesso</h2>
+    <p class="acesso-aviso">Esta conta não é do proprietário.</p>
+    <p class="hint">Saia e entre com a conta que administra o Folha Zero.</p>
+    <button type="button" class="btn ghost" id="btn-sair-recusa">Sair</button>
+  </section>
+  <section id="st-expirada" class="card ux-centro hidden">
+    <h2>Sessão expirada</h2>
+    <p class="acesso-aviso">Sua sessão expirou. Entre de novo com sua conta Google.</p>
+    <p id="st-expirada-extra" class="hint"></p>
+    <div class="actions">
+      <button type="button" class="btn primary" id="btn-entrar-de-novo">Entrar de novo</button>
+      <button type="button" class="btn ghost" id="btn-sair-expirada">Sair</button>
+    </div>
+  </section>
+  <section id="st-temporario" class="card ux-centro hidden">
+    <h2>Sem conexão</h2>
+    <p class="acesso-aviso">Não foi possível conferir agora. Tente de novo.</p>
+    <button type="button" class="btn ghost" id="btn-tentar">Tentar de novo</button>
+  </section>
+  <div id="painel" class="hidden">
+    <div class="ux-nav" id="nav-painel">
+      <button type="button" class="btn ghost" data-tela="inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/></svg>Visão geral</button>
+      <button type="button" class="btn ghost" data-tela="pessoas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 19c.6-3 2.8-4.5 6-4.5S14.4 16 15 19"/><circle cx="17" cy="9" r="2"/><path d="M16.5 14.5c2.2.3 3.7 1.5 4.5 4"/></svg>Pessoas</button>
+      <button type="button" class="btn ghost" data-tela="pedidos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Pedidos <b id="c-pedidos">0</b></button>
+      <button type="button" class="btn ghost" data-tela="empresas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16M6 20V6h8v14M14 10h4v10"/><path d="M8 9h2M8 12h2M8 15h2"/></svg>Empresas</button>
+      <button type="button" class="btn ghost" data-tela="licencas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/></svg>Licenças</button>
+      <button type="button" class="btn ghost" data-tela="convites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16v10H4z"/><path d="m4 7 8 6 8-6"/></svg>Convites</button>
+      <button type="button" class="btn ghost" data-tela="conta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3"/><path d="M5 19c1-3 3.2-4.5 7-4.5S18 16 19 19"/></svg>Minha conta</button>
+    </div>
+    <section id="tela-inicio" class="hidden">
+      <h2>Início</h2>
+      <div class="ux-kpis">
+        <div class="ux-kpi num"><b id="n-ativas">0</b><span>Pessoas ativas</span><small style="display:block">Entraram ou fizeram backup em 30 dias</small></div>
+        <div class="ux-kpi num"><b id="n-carros">0</b><span>Carros lançados</span><small style="display:block">Somando os backups na nuvem</small></div>
+        <div class="ux-kpi"><b id="n-empresas">0</b><span>Empresas</span><small style="display:block">Sem a INOVA de teste</small></div>
+        <div class="ux-kpi"><b id="n-vencem">0</b><span>Vencem em 7 dias</span><small style="display:block">Licenças e degustações</small></div>
+        <div class="ux-kpi"><b id="n-pedidos">0</b><span>Pedidos esperando</span><small style="display:block">Ainda sem decisão</small></div>
+        <div class="ux-kpi"><b id="n-avulsos">0</b><span>Pessoas avulsas</span><small style="display:block">Contas fora de empresa</small></div>
+      </div>
+    </section>
+    <section id="tela-pessoas" class="card hidden">
+      <h2>Pessoas cadastradas</h2>
+      <label class="ux-busca">Buscar<input id="busca-pessoas" type="search" placeholder="Nome ou e-mail" autocomplete="off"></label>
+      <div id="lista-pessoas"></div>
+      <h3>Pessoas avulsas</h3>
+      <div id="lista-avulsos"></div>
+    </section>
+    <section id="tela-pedidos" class="card hidden">
+      <h2>Pedidos</h2>
+      <div id="lista-pedidos"></div>
+    </section>
+    <section id="tela-empresas" class="card hidden">
+      <h2>Empresas</h2>
+      <form id="form-empresa">
+        <label>Nome da empresa<input id="emp-nome" autocomplete="off"></label>
+        <label>E-mail do gerente<input id="emp-email" type="email" autocomplete="off"></label>
+        <button type="submit" class="btn primary big">Criar empresa e convite</button>
+      </form>
+      <p id="st-empresa" class="hint"></p>
+      <div id="lista-empresas"></div>
+    </section>
+    <section id="tela-licencas" class="card hidden">
+      <h2>Licenças</h2>
+      <p class="hint">Ativa, degustação, vencida, suspensa ou revogada. O prazo trava só carro novo.</p>
+      <div id="lista-licencas"></div>
+    </section>
+    <section id="tela-convites" class="card hidden">
+      <h2>Convites</h2>
+      <p class="hint">O convite fica em rascunho. Nenhum e-mail é enviado. Copie o código e mande você mesmo.</p>
+      <form id="form-convite">
+        <label>E-mail<input id="conv-email" type="email" autocomplete="off"></label>
+        <label>Tipo<select id="conv-tipo"><option value="avulso">Pessoa avulsa</option><option value="gerente">Gerente</option></select></label>
+        <button type="submit" class="btn primary big">Criar convite</button>
+      </form>
+      <p id="st-convite" class="hint"></p>
+      <div id="lista-convites"></div>
+    </section>
+    <section id="tela-conta" class="card hidden">
+      <h2>Minha conta</h2>
+      <p id="st-conta" class="hint"></p>
+      <button type="button" class="btn ghost" id="btn-sair">Sair</button>
+    </section>
+  </div>
+</main>
+<div id="ux-toast" class="toast hidden" role="status"></div>
+<script type="module" src="admin-painel.bundle.js"></script>
+</body>
+</html>
