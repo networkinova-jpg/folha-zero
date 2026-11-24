@@ -28,11 +28,18 @@ body.ux .ux-faixa{display:flex;justify-content:space-between;gap:8px;align-items
 body.ux .ux-setor{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 @media(min-width:900px){body.ux .ux-setor{grid-template-columns:repeat(5,1fr)}}
 body.ux .ux-setor button{text-align:left;background:#fff;border:1px solid #e6edf5;border-radius:14px;padding:12px;min-height:88px;font-weight:800;color:var(--pri);font-family:inherit}
+body.ux .ux-arquivar{width:auto;min-height:36px;padding:6px 12px}
+body.ux .ux-etapa{border-left:3px solid var(--pri);padding:4px 0 8px 12px;margin:10px 0}
+body.ux .ux-etapa.ok{border-color:var(--ok)}
+body.ux .ux-etapa.atrasado{border-color:var(--err)}
+body.ux .ux-par{display:flex;gap:8px;flex-wrap:wrap}
+body.ux .ux-par label{flex:1;min-width:120px}
 body.ux .ux-setor button.alerta{border-color:#f2d08b;background:#fff8eb}
 body.ux .ux-setor button small{display:block;font-weight:600;color:var(--mut);margin-top:6px}
 body.ux .ux-item{background:#fff;border-radius:14px;padding:12px 14px;margin:8px 0;box-shadow:0 1px 3px rgba(15,61,94,.08)}
 body.ux .ux-os{font-size:20px;font-weight:800}
 body.ux .ux-selo{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800;margin:4px 4px 0 0;background:#e7eef6;color:var(--pri)}
+body.ux .ux-selo.ok{background:#d1fae5;color:#065f46}
 body.ux .ux-selo.fim{background:#e2e8f0;color:#334155}
 body.ux .ux-bar{height:8px;background:#e7eef6;border-radius:99px;overflow:hidden;margin-top:8px}
 body.ux .ux-bar i{display:block;height:100%;background:var(--ok);width:0}
@@ -99,7 +106,6 @@ body.ux .ux-priv{background:#f4f6f9}
       <button type="button" class="btn ghost" data-tela="pausas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg>Pausas e gargalos</button>
       <button type="button" class="btn ghost" data-tela="sla"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16"/><path d="M8 15l3-4 3 2 4-6"/></svg>SLA</button>
       <button type="button" class="btn ghost" data-tela="equipes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="9" r="2"/><path d="M3 19c.6-3 2.6-4.5 5-4.5s4.4 1.5 5 4.5M14 14.5c2 .3 3.5 1.4 4 3.5"/></svg>Equipes e convites</button>
-      <button type="button" class="btn ghost" id="btn-sair">Sair</button>
     </div>
     <section id="tela-inicio" class="card hidden">
       <h2>Início</h2>
@@ -107,9 +113,16 @@ body.ux .ux-priv{background:#f4f6f9}
       <div class="ux-kpis">
         <div class="ux-kpi info"><b id="n-ativos">0</b><span>Em andamento</span></div>
         <div class="ux-kpi warn"><b id="n-pausados">0</b><span>Pausados</span></div>
+        <div class="ux-kpi ok"><b id="n-dentro">0</b><span>Dentro do SLA</span></div>
+        <div class="ux-kpi warn"><b id="n-perto">0</b><span>Perto do SLA</span></div>
         <div class="ux-kpi err"><b id="n-fora">0</b><span>Fora do SLA</span></div>
         <div class="ux-kpi ok"><b id="n-concluidos">0</b><span>Concluídos</span></div>
+        <div class="ux-kpi info"><b id="n-media">0</b><span>Média geral</span></div>
       </div>
+      <h3>Equipes da empresa</h3>
+      <p class="hint">Toque numa equipe para ver prestador, hora de início, pausa, tempo útil e SLA.</p>
+      <div id="lista-equipes-inicio" class="ux-setor"></div>
+      <div id="detalhe-equipe"></div>
       <h3>Gargalos</h3>
       <div id="lista-gargalos"></div>
     </section>
@@ -126,33 +139,45 @@ body.ux .ux-priv{background:#f4f6f9}
     </section>
     <section id="tela-pausas" class="card hidden">
       <h2>Pausas e gargalos</h2>
-      <p class="hint">Fim de expediente aparece por último e não entra no tempo útil.</p>
+      <p class="hint">Fim de expediente e Almoço/café ficam por último e não entram no tempo útil.</p>
       <div id="lista-pausas"></div>
       <h3>Fora do SLA</h3>
       <div id="lista-fora"></div>
     </section>
     <section id="tela-sla" class="card hidden">
       <h2>SLA</h2>
-      <p class="hint">Horas úteis por setor. O padrão é 8. Só vale no banco quando a Gestão já foi aplicada.</p>
+      <p class="hint">A média real dos carros finalizados vira a referência do setor. Sem finalizados, vale o prazo salvo. O padrão é 8h. Horas e minutos viram um número decimal no banco, sem mudar a coluna.</p>
       <div id="lista-sla"></div>
     </section>
-    <section id="tela-equipes" class="card hidden">
+    <section id="tela-equipes" class="hidden">
       <h2>Equipes e convites</h2>
-      <p class="hint">O convite fica em rascunho. Nenhum e-mail é enviado. Copie o código e mande você mesmo.</p>
-      <form id="form-equipe">
-        <label>Nome da equipe<input id="equipe-nome" autocomplete="off"></label>
-        <button type="submit" class="btn primary">Criar equipe</button>
-      </form>
-      <div id="lista-equipes"></div>
-      <form id="form-convite">
-        <label>E-mail do prestador<input id="conv-email" type="email" autocomplete="off"></label>
-        <label>Equipe<select id="conv-equipe"><option value="">Sem equipe</option></select></label>
-        <button type="submit" class="btn primary">Gerar convite</button>
-      </form>
-      <p id="st-convite" class="hint"></p>
-      <div id="lista-convites"></div>
-      <h3>Vínculos</h3>
-      <div id="lista-vinculos"></div>
+      <p class="hint">O convite fica em rascunho. Nenhum e-mail é enviado. Copie o código e mande você mesmo. O e-mail é o que o prestador usa no app.</p>
+      <article class="ux-item">
+        <h3>Criar equipe</h3>
+        <form id="form-equipe">
+          <label>Nome da equipe<input id="equipe-nome" autocomplete="off" placeholder="Ex.: Montagem"></label>
+          <button type="submit" class="btn primary">Criar equipe</button>
+        </form>
+      </article>
+      <article class="ux-item">
+        <h3>Equipes cadastradas</h3>
+        <div id="lista-equipes"></div>
+      </article>
+      <article class="ux-item">
+        <h3>Vincular prestador</h3>
+        <p class="hint">Informe o e-mail da conta do prestador e a equipe. O consentimento continua explícito. Valor, ajudante, desconto, quinzena e observação pessoal ficam no celular.</p>
+        <form id="form-convite">
+          <label>E-mail do prestador<input id="conv-email" type="email" autocomplete="off"></label>
+          <label>Equipe<select id="conv-equipe"><option value="">Sem equipe</option></select></label>
+          <button type="submit" class="btn primary">Gerar convite</button>
+        </form>
+        <p id="st-convite" class="hint"></p>
+      </article>
+      <article class="ux-item">
+        <h3>Convites e vínculos</h3>
+        <div id="lista-convites"></div>
+        <div id="lista-vinculos"></div>
+      </article>
     </section>
     <section id="tela-prestador" class="card hidden">
       <h2>Minha equipe</h2>

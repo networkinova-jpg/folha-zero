@@ -294,6 +294,7 @@ var require_gestao_producao_logica = __commonJS({
       const OUTROS = "Outros";
       const MOTIVOS = ["Faltando pe\xE7a", "Faltando vidro", "Problemas el\xE9tricos", "Problemas com vidro", "Aguardando etapa anterior", "Aguardando vidraceiro", "Aguardando ajuste da produ\xE7\xE3o", "Impasse na resolu\xE7\xE3o de um problema"];
       const FIM = "Fim de expediente";
+      const ALMOCO = "Almo\xE7o/caf\xE9";
       const ETAPA = "Aguardando etapa anterior";
       const SLA_PADRAO = 8;
       const CAMPOS = ["os", "veiculo", "setor", "situacao", "dataInicio", "horaInicio", "dataTermino", "horaTermino", "pausas"];
@@ -358,6 +359,39 @@ var require_gestao_producao_logica = __commonJS({
         if (!data || !hora) return null;
         return minutosDe(data + "T" + hora);
       }
+      function semAcento(texto2) {
+        return String(texto2 || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+      }
+      function tipoFora(pausa) {
+        if (!pausa) return "";
+        const nome = semAcento(pausa.motivo);
+        if (nome === semAcento(FIM)) return FIM;
+        if (nome === "almoco/cafe" || nome === "almoco / cafe") return ALMOCO;
+        return "";
+      }
+      function fmtDuracao(minutos) {
+        if (minutos == null || Number(minutos) !== Number(minutos)) return "sem hora";
+        const min = Math.max(0, Math.round(Number(minutos)));
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        if (h && m) return h + "h " + m + "min";
+        if (h) return h + "h";
+        return m + " min";
+      }
+      function prazoDecimal(horas, minutos) {
+        const h = Number(horas);
+        const m = Number(minutos);
+        if (h !== h || m !== m || h < 0 || m < 0 || m >= 60) return null;
+        const total = Math.round((h + m / 60) * 1e4) / 1e4;
+        if (total <= 0 || total > 999) return null;
+        return total;
+      }
+      function partesPrazo(decimal) {
+        const n = Number(decimal);
+        if (n !== n || n <= 0) return { horas: 0, minutos: 0 };
+        const total = Math.max(0, Math.round(n * 60));
+        return { horas: Math.floor(total / 60), minutos: total % 60 };
+      }
       function tempoUtil(carro, agora) {
         const inicio = instante(carro.dataInicio, carro.horaInicio);
         const fimInformado = instante(carro.dataTermino, carro.horaTermino);
@@ -370,7 +404,7 @@ var require_gestao_producao_logica = __commonJS({
           const b = item.fim ? minutosDe(item.fim) : minutosDe(agora);
           if (a == null || b == null) return;
           const trecho = Math.max(0, Math.min(b, fim) - Math.max(a, inicio));
-          if (item.motivo === FIM && !item.outro) fora += trecho;
+          if (tipoFora(item)) fora += trecho;
           else pausa += trecho;
         });
         return { minutos: Math.max(0, fim - inicio - pausa - fora), horas: true, pausa, fora };
@@ -400,9 +434,14 @@ var require_gestao_producao_logica = __commonJS({
           semHora: 0
         };
       }
-      function classeSla(minutos, prazoHoras) {
+      function classeSla(minutos, prazoHoras, usouMedia) {
         if (minutos == null || prazoHoras == null) return "sem_hora";
         const limite = Number(prazoHoras) * 60;
+        if (usouMedia && minutos <= limite) {
+          if (minutos >= limite) return "dentro";
+          if (minutos >= limite * 0.8) return "perto";
+          return "dentro";
+        }
         if (minutos >= limite) return "atrasado";
         if (minutos >= limite * 0.8) return "perto";
         return "dentro";
@@ -429,13 +468,37 @@ var require_gestao_producao_logica = __commonJS({
         MOTIVOS.forEach((nome) => {
           motivos[nome] = { motivo: nome, outro: false, fimExp: false, min: 0, qtd: 0 };
         });
+        motivos[ALMOCO] = { motivo: ALMOCO, outro: false, fimExp: true, min: 0, qtd: 0 };
         motivos[FIM] = { motivo: FIM, outro: false, fimExp: true, min: 0, qtd: 0 };
         let andamento = 0;
         let finalizados = 0;
         let pausasAbertas = 0;
         let foraSla = 0;
-        (pedido.carros || []).filter((carro) => noPeriodo(carro, inicio, fim)).forEach((bruto) => {
-          const carro = fichaPermitida(bruto);
+        let dentro = 0;
+        let perto = 0;
+        let mediaMin = 0;
+        let mediaN = 0;
+        const lista = (pedido.carros || []).filter((carro) => noPeriodo(carro, inicio, fim)).map((bruto) => ({ bruto, carro: fichaPermitida(bruto) }));
+        const medias = {};
+        lista.forEach((item) => {
+          if (!item.carro.dataTermino) return;
+          const util = tempoUtil(item.carro, agora);
+          if (!util.horas) return;
+          const grupo = agruparSetor(item.carro.setor);
+          if (!medias[grupo]) medias[grupo] = { min: 0, n: 0 };
+          medias[grupo].min += util.minutos;
+          medias[grupo].n += 1;
+        });
+        function referencia(grupo) {
+          const salvo = prazos[grupo] != null ? prazos[grupo] : SETORES.indexOf(grupo) >= 0 ? SLA_PADRAO : null;
+          if (medias[grupo] && medias[grupo].n) {
+            return { horas: medias[grupo].min / medias[grupo].n / 60, usouMedia: true, salvo, mediaMin: Math.round(medias[grupo].min / medias[grupo].n) };
+          }
+          return { horas: salvo, usouMedia: false, salvo, mediaMin: null };
+        }
+        lista.forEach((item) => {
+          const bruto = item.bruto;
+          const carro = item.carro;
           const grupo = agruparSetor(carro.setor);
           if (!setores[grupo]) setores[grupo] = vazioSetor(grupo);
           const box = setores[grupo];
@@ -466,16 +529,25 @@ var require_gestao_producao_logica = __commonJS({
             equipes[equipe].pausaMin += util.pausa;
             pessoas[email].tempoUtilMin += util.minutos;
             pessoas[email].comHora += 1;
-            const classe = classeSla(util.minutos, prazos[grupo]);
+            const ref = referencia(grupo);
+            const classe = classeSla(util.minutos, ref.horas, ref.usouMedia);
+            if (!aberto && ref.mediaMin != null) {
+              mediaMin += util.minutos;
+              mediaN += 1;
+            }
             if (classe === "atrasado") {
               box.atrasado += 1;
               foraSla += 1;
-            } else if (classe === "perto") box.perto += 1;
-            else if (classe === "dentro") box.dentro += 1;
-            else box.semHora += 1;
+            } else if (classe === "perto") {
+              box.perto += 1;
+              perto += 1;
+            } else if (classe === "dentro") {
+              box.dentro += 1;
+              dentro += 1;
+            } else box.semHora += 1;
           } else box.semHora += 1;
           const aberta = pausaAberta(Object.assign({}, carro, { dataTermino: carro.dataTermino }));
-          if (aberta && aberta.motivo !== FIM) {
+          if (aberta && !tipoFora(aberta)) {
             pausasAbertas += 1;
             pessoas[email].pausaAberta = true;
           }
@@ -485,8 +557,9 @@ var require_gestao_producao_logica = __commonJS({
             const b = minutosDe(pausa.fim);
             if (a == null || b == null) return;
             const trecho = Math.max(0, b - a);
-            const chave = pausa.motivo === FIM && !pausa.outro ? FIM : pausa.outro || MOTIVOS.indexOf(pausa.motivo) < 0 ? "outro:" + pausa.motivo : pausa.motivo;
-            if (!motivos[chave]) motivos[chave] = { motivo: pausa.motivo, outro: chave !== FIM && chave !== pausa.motivo || !!pausa.outro, fimExp: chave === FIM, min: 0, qtd: 0 };
+            const especial = tipoFora(pausa);
+            const chave = especial || (pausa.outro || MOTIVOS.indexOf(pausa.motivo) < 0 ? "outro:" + pausa.motivo : pausa.motivo);
+            if (!motivos[chave]) motivos[chave] = { motivo: pausa.motivo, outro: !especial && (chave !== pausa.motivo || !!pausa.outro), fimExp: !!especial, min: 0, qtd: 0 };
             if (chave.indexOf("outro:") === 0) motivos[chave].outro = true;
             motivos[chave].min += trecho;
             motivos[chave].qtd += 1;
@@ -519,11 +592,21 @@ var require_gestao_producao_logica = __commonJS({
         }
         const ordemMotivos = MOTIVOS.slice();
         Object.keys(motivos).forEach((chave) => {
-          if (ordemMotivos.indexOf(chave) < 0 && chave !== FIM) ordemMotivos.push(chave);
+          if (ordemMotivos.indexOf(chave) < 0 && chave !== FIM && chave !== ALMOCO) ordemMotivos.push(chave);
         });
+        ordemMotivos.push(ALMOCO);
         ordemMotivos.push(FIM);
         return {
-          inicio: { andamento, finalizados, pausasAbertas, foraSla, setorMaisParado },
+          inicio: {
+            andamento,
+            finalizados,
+            pausasAbertas,
+            foraSla,
+            dentro,
+            perto,
+            mediaGeralMin: mediaN ? Math.round(mediaMin / mediaN) : null,
+            setorMaisParado
+          },
           porSetor: listaSetores.map((box) => Object.assign({}, box, { tempoUtilMedioMin: media(box) })),
           porEquipe: Object.keys(equipes).map((chave) => Object.assign({}, equipes[chave], { tempoUtilMedioMin: media(equipes[chave]) })),
           porPrestador: Object.keys(pessoas).filter((chave) => chave).map((chave) => Object.assign({}, pessoas[chave], { tempoUtilMedioMin: media(pessoas[chave]) })),
@@ -533,13 +616,19 @@ var require_gestao_producao_logica = __commonJS({
             maiorTempoUtil: maior("media"),
             maisPausa: maior("pausaMin")
           },
-          sla: SETORES.map((nome) => ({
-            setor: nome,
-            prazoHoras: prazos[nome],
-            dentro: setores[nome].dentro,
-            perto: setores[nome].perto,
-            atrasado: setores[nome].atrasado
-          }))
+          sla: SETORES.map((nome) => {
+            const ref = referencia(nome);
+            return {
+              setor: nome,
+              prazoHoras: prazos[nome],
+              referenciaHoras: ref.horas,
+              usouMedia: ref.usouMedia,
+              mediaRealMin: ref.mediaMin,
+              dentro: setores[nome].dentro,
+              perto: setores[nome].perto,
+              atrasado: setores[nome].atrasado
+            };
+          })
         };
       }
       const api = {
@@ -547,6 +636,7 @@ var require_gestao_producao_logica = __commonJS({
         OUTROS,
         MOTIVOS,
         FIM,
+        ALMOCO,
         SLA_PADRAO,
         CAMPOS,
         PROIBIDOS,
@@ -556,7 +646,11 @@ var require_gestao_producao_logica = __commonJS({
         revogar,
         decidirDispositivo,
         tempoUtil,
-        indicadores
+        indicadores,
+        fmtDuracao,
+        prazoDecimal,
+        partesPrazo,
+        tipoFora
       };
       root.FolhaGestaoProducao = api;
       if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -656,48 +750,109 @@ var require_gestao_tela = __commonJS({
       }
       function montarPainel(dados2, filtro2) {
         const base = dados2 || {};
-        const carros = filtrarCarros(base.carros, filtro2).map((carro) => detalheCarro(carro, base.sla, base.agora));
-        const ind = logica().indicadores({
-          carros,
+        const geral = logica().indicadores({
+          carros: base.carros,
           inicio: base.inicio,
           fim: base.fim,
           agora: base.agora,
           sla: base.sla
+        });
+        const escolhidos = filtrarCarros(base.carros, filtro2);
+        const ind = logica().indicadores({
+          carros: escolhidos,
+          inicio: base.inicio,
+          fim: base.fim,
+          agora: base.agora,
+          sla: base.sla
+        });
+        const detalhes = (base.carros || []).map((carro) => detalheCarro(carro, geral.sla, base.agora));
+        const osVistos = {};
+        escolhidos.forEach((carro) => {
+          osVistos[carro.os || "Sem OS"] = true;
+        });
+        const ordem = logica().SETORES.concat([logica().OUTROS]);
+        const porOs = {};
+        detalhes.forEach((carro) => {
+          const chave = carro.os || "Sem OS";
+          if (!porOs[chave]) porOs[chave] = { os: chave, veiculo: carro.veiculo || "", etapas: [] };
+          if (!porOs[chave].veiculo && carro.veiculo) porOs[chave].veiculo = carro.veiculo;
+          porOs[chave].etapas.push(carro);
+        });
+        const os = Object.keys(porOs).filter((chave) => osVistos[chave]).map((chave) => {
+          const card = porOs[chave];
+          card.etapas.sort((a, b) => ordem.indexOf(a.grupo) - ordem.indexOf(b.grupo) || String(a.dataInicio).localeCompare(String(b.dataInicio)));
+          return card;
         });
         return {
           ativos: ind.inicio.andamento,
           pausados: ind.inicio.pausasAbertas,
           concluidos: ind.inicio.finalizados,
           foraSla: ind.inicio.foraSla,
+          dentro: geral.inicio.dentro,
+          perto: geral.inicio.perto,
+          mediaGeral: logica().fmtDuracao(geral.inicio.mediaGeralMin),
           gargalos: [ind.gargalos.etapaAnterior, ind.gargalos.maiorTempoUtil, ind.gargalos.maisPausa],
           porSetor: ind.porSetor,
           pausas: ind.pausas,
-          sla: ind.sla,
-          fora: carrosFora(carros, base.sla, base.agora),
+          sla: geral.sla,
+          fora: detalhes.filter((carro) => carro.atrasado && osVistos[carro.os || "Sem OS"]),
           equipes: base.equipes || [],
           vinculos: base.vinculos || [],
           convites: base.convites || [],
-          carros
+          carros: detalhes.filter((carro) => osVistos[carro.os || "Sem OS"]),
+          os,
+          equipesResumo: resumoEquipes(detalhes, base.equipes || [], base.vinculos || [])
         };
+      }
+      function resumoEquipes(detalhes, equipes, vinculos) {
+        return (equipes || []).map((equipe) => {
+          const etapas = detalhes.filter((carro) => (carro.equipeId || "") === equipe.id);
+          const pessoas = {};
+          etapas.forEach((carro) => {
+            const email = carro.prestadorEmail || "";
+            if (!pessoas[email]) pessoas[email] = { email, nome: carro.prestadorNome || "Sem nome", etapas: [] };
+            pessoas[email].etapas.push(carro);
+          });
+          (vinculos || []).filter((item) => (item.equipe_id || item.equipeId) === equipe.id).forEach((item) => {
+            const email = item.email || "";
+            if (!pessoas[email]) pessoas[email] = { email, nome: item.nome || "Sem nome", etapas: [] };
+          });
+          return {
+            id: equipe.id,
+            nome: equipe.nome,
+            status: equipe.status,
+            andamento: etapas.filter((carro) => !carro.dataTermino).length,
+            concluidos: etapas.filter((carro) => !!carro.dataTermino).length,
+            foraSla: etapas.filter((carro) => carro.atrasado).length,
+            prestadores: Object.keys(pessoas).map((email) => pessoas[email])
+          };
+        });
       }
       function detalheCarro(carro, sla, agora) {
         const n = normalizarCarro(carro);
         const grupo = logica().agruparSetor(n.setor);
         const prazoItem = (sla || []).find((item) => item.setor === grupo);
         const oficial = logica().SETORES.indexOf(grupo) >= 0;
-        const prazo = prazoItem ? Number(prazoItem.prazoHoras != null ? prazoItem.prazoHoras : prazoItem.prazo_horas_uteis) : oficial ? logica().SLA_PADRAO : null;
+        const referencia = prazoItem && prazoItem.referenciaHoras != null ? Number(prazoItem.referenciaHoras) : oficial ? logica().SLA_PADRAO : null;
+        const usouMedia = !!(prazoItem && prazoItem.usouMedia);
         const util = logica().tempoUtil(n, agora);
-        const limite = prazo ? prazo * 60 : null;
+        const limite = referencia != null ? referencia * 60 : null;
         const pct = util.horas && limite ? Math.min(100, Math.round(util.minutos / limite * 100)) : 0;
-        const fim = logica().FIM;
-        const tempo = !util.horas ? "Sem hora para calcular o SLA" : limite ? Math.round(util.minutos / 60) + " h \xFAteis de " + prazo + " h" : Math.round(util.minutos / 60) + " h \xFAteis. Este grupo n\xE3o tem SLA.";
+        const atrasado = !!(util.horas && limite != null && (usouMedia ? util.minutos > limite : util.minutos >= limite));
+        const tempo = !util.horas ? "Sem hora para calcular o SLA" : limite != null ? logica().fmtDuracao(util.minutos) + " de " + logica().fmtDuracao(limite) : logica().fmtDuracao(util.minutos) + ". Este grupo n\xE3o tem SLA.";
+        const pausaAberta = (n.pausas || []).filter((pausa) => !pausa.fim);
         return Object.assign({}, n, {
           grupo,
           pct,
-          atrasado: !!(util.horas && limite && util.minutos >= limite),
+          atrasado,
+          perto: !!(util.horas && limite != null && !atrasado && util.minutos >= limite * 0.8 && !(usouMedia && util.minutos >= limite)),
           tempo,
-          pausasOperacao: (n.pausas || []).filter((p) => !(p.motivo === fim && !p.outro)),
-          expediente: (n.pausas || []).filter((p) => p.motivo === fim && !p.outro)
+          horaInicioTexto: n.horaInicio || "sem hora",
+          horaPausaTexto: pausaAberta.length ? (pausaAberta[0].inicio || "").slice(11, 16) || "aberta" : "sem pausa aberta",
+          horaTerminoTexto: n.horaTermino || (n.dataTermino ? "sem hora" : "em aberto"),
+          pausasOperacao: (n.pausas || []).filter((pausa) => !logica().tipoFora(pausa)),
+          expediente: (n.pausas || []).filter((pausa) => logica().tipoFora(pausa) === logica().FIM),
+          almoco: (n.pausas || []).filter((pausa) => logica().tipoFora(pausa) === logica().ALMOCO)
         });
       }
       function exemploLocal() {
@@ -708,47 +863,76 @@ var require_gestao_tela = __commonJS({
           fim: "2026-11-30",
           agora: "2026-11-23T18:00",
           equipes: [
-            { id: "equipe-a", nome: "Time A", status: "ativa" },
-            { id: "equipe-b", nome: "Time B", status: "ativa" }
+            { id: "equipe-montagem", nome: "Montagem", status: "ativa" },
+            { id: "equipe-vidro", nome: "Vidro", status: "ativa" },
+            { id: "equipe-tapecaria", nome: "Tape\xE7aria", status: "ativa" }
           ],
           vinculos: [
-            { vinculo: "v1", email: "ana@example.invalid", nome: "Ana", equipe_id: "equipe-a", status: "ativo" },
-            { vinculo: "v2", email: "bruno@example.invalid", nome: "Bruno", equipe_id: "equipe-b", status: "ativo" },
-            { vinculo: "v3", email: "carla@example.invalid", nome: "Carla", equipe_id: "equipe-a", status: "ativo" }
+            { vinculo: "v1", email: "ana@example.invalid", nome: "Ana", equipe_id: "equipe-montagem", status: "ativo" },
+            { vinculo: "v2", email: "bruno@example.invalid", nome: "Bruno", equipe_id: "equipe-vidro", status: "ativo" },
+            { vinculo: "v3", email: "carla@example.invalid", nome: "Carla", equipe_id: "equipe-tapecaria", status: "ativo" }
           ],
           convites: [
             { id: "c1", codigo: "exemplo10", email: "novo@example.invalid", status: "rascunho" }
           ],
-          sla: logica().SETORES.map((setor) => ({ setor, prazoHoras: setor === "Vidro" ? 6 : logica().SLA_PADRAO })),
+          sla: logica().SETORES.map((setor) => ({ setor, prazoHoras: logica().SLA_PADRAO })),
           dispositivo: { ativo: true, dispositivo_id: "exemplo-celular-01", rotulo: "Celular de exemplo" },
           carros: [
             {
               os: "OS-100",
-              veiculo: "Exemplo tapa",
+              veiculo: "Hilux exemplo",
+              setor: "Desmontagem",
+              situacao: "Finalizado",
+              dataInicio: "2026-11-18",
+              horaInicio: "08:00",
+              dataTermino: "2026-11-18",
+              horaTermino: "12:00",
+              equipeId: "equipe-montagem",
+              prestadorEmail: "ana@example.invalid",
+              prestadorNome: "Ana",
+              pausas: []
+            },
+            {
+              os: "OS-100",
+              veiculo: "Hilux exemplo",
+              setor: "Manta",
+              situacao: "Finalizado",
+              dataInicio: "2026-11-19",
+              horaInicio: "08:00",
+              dataTermino: "2026-11-19",
+              horaTermino: "12:30",
+              equipeId: "equipe-montagem",
+              prestadorEmail: "ana@example.invalid",
+              prestadorNome: "Ana",
+              pausas: [{ motivo: "Almo\xE7o/caf\xE9", outro: false, inicio: "2026-11-19T12:00", fim: "2026-11-19T12:30" }]
+            },
+            {
+              os: "OS-100",
+              veiculo: "Hilux exemplo",
+              setor: "Vidro",
+              situacao: "Finalizado",
+              dataInicio: "2026-11-20",
+              horaInicio: "08:00",
+              dataTermino: "2026-11-20",
+              horaTermino: "14:00",
+              equipeId: "equipe-vidro",
+              prestadorEmail: "bruno@example.invalid",
+              prestadorNome: "Bruno",
+              pausas: [{ motivo: "Almo\xE7o/caf\xE9", outro: false, inicio: "2026-11-20T12:00", fim: "2026-11-20T13:00" }]
+            },
+            {
+              os: "OS-100",
+              veiculo: "Hilux exemplo",
               setor: "Tape\xE7aria",
               situacao: "Aguardando etapa anterior",
-              dataInicio: "2026-11-20",
+              dataInicio: "2026-11-23",
               horaInicio: "08:00",
               dataTermino: "",
               horaTermino: "",
-              equipeId: "equipe-a",
-              prestadorEmail: "ana@example.invalid",
-              prestadorNome: "Ana",
-              pausas: [{ motivo: "Aguardando etapa anterior", outro: false, inicio: "2026-11-20T16:00", fim: null }]
-            },
-            {
-              os: "OS-200",
-              veiculo: "Exemplo vidro",
-              setor: "Vidro",
-              situacao: "Finalizado",
-              dataInicio: "2026-11-10",
-              horaInicio: "08:00",
-              dataTermino: "2026-11-10",
-              horaTermino: "12:00",
-              equipeId: "equipe-b",
-              prestadorEmail: "bruno@example.invalid",
-              prestadorNome: "Bruno",
-              pausas: [{ motivo: "Faltando vidro", outro: false, inicio: "2026-11-10T09:00", fim: "2026-11-10T09:20" }]
+              equipeId: "equipe-tapecaria",
+              prestadorEmail: "carla@example.invalid",
+              prestadorNome: "Carla",
+              pausas: [{ motivo: "Aguardando etapa anterior", outro: false, inicio: "2026-11-23T14:00", fim: null }]
             },
             {
               os: "OS-300",
@@ -759,9 +943,9 @@ var require_gestao_tela = __commonJS({
               horaInicio: "08:00",
               dataTermino: "2026-11-12",
               horaTermino: "17:00",
-              equipeId: "equipe-a",
-              prestadorEmail: "carla@example.invalid",
-              prestadorNome: "Carla",
+              equipeId: "equipe-montagem",
+              prestadorEmail: "ana@example.invalid",
+              prestadorNome: "Ana",
               pausas: [{ motivo: "Fim de expediente", outro: false, inicio: "2026-11-12T12:00", fim: "2026-11-12T13:00" }],
               valor: 999,
               observacao: "nao mostrar"
@@ -21721,6 +21905,7 @@ var estado = { sessao: false, situacao: "", papel: "nenhum", demonstracao: false
 var telaAtual = "inicio";
 var dados = null;
 var filtro = { equipe: "", prestador: "", setor: "", situacao: "", busca: "" };
+var equipeAberta = "";
 var toastTimer = 0;
 function texto(id, valor) {
   const el = $(id);
@@ -21834,12 +22019,16 @@ function avisar(msg) {
   toastTimer = setTimeout(() => el.classList.add("hidden"), 2400);
 }
 function pintarGerente() {
+  const geral = T.montarPainel(dados, {});
   const painel = T.montarPainel(dados, filtro);
-  texto("st-empresa", (estado.demonstracao ? T.ROTULO_EXEMPLO + " " : "") + (dados.empresaNome || ""));
-  texto("n-ativos", painel.ativos);
-  texto("n-pausados", painel.pausados);
-  texto("n-concluidos", painel.concluidos);
-  texto("n-fora", painel.foraSla);
+  texto("st-empresa", (estado.demonstracao ? T.ROTULO_EXEMPLO + " " : "") + (dados.empresaNome || "Sua empresa"));
+  texto("n-ativos", geral.ativos);
+  texto("n-pausados", geral.pausados);
+  texto("n-concluidos", geral.concluidos);
+  texto("n-fora", geral.foraSla);
+  texto("n-dentro", geral.dentro);
+  texto("n-perto", geral.perto);
+  texto("n-media", geral.mediaGeral);
   const gargalos = limpar("lista-gargalos");
   [
     "Mais carros aguardando etapa anterior: " + painel.gargalos[0],
@@ -21866,8 +22055,9 @@ function pintarGerente() {
     setores.appendChild(botaoSetor);
   });
   const carros = limpar("lista-carros");
-  if (!painel.carros.length) carros.appendChild(paragrafo("Nenhum carro neste filtro."));
-  painel.carros.forEach((carro) => carros.appendChild(cartaoCarro(carro)));
+  if (!painel.os.length) carros.appendChild(paragrafo("Nenhum carro neste filtro."));
+  painel.os.forEach((card) => carros.appendChild(cartaoOs(card)));
+  desenharEquipesInicio(geral);
   const pausas = limpar("lista-pausas");
   painel.pausas.forEach((item) => {
     if (!item.qtd && !item.fimExp) return;
@@ -21880,26 +22070,20 @@ function pintarGerente() {
     fora.appendChild(paragrafo(carro.os + " " + carro.veiculo + " " + carro.setor + " " + carro.prestadorNome));
   });
   const sla = limpar("lista-sla");
-  painel.sla.forEach((item) => {
-    const bloco = document.createElement("div");
-    bloco.className = "ux-item";
-    const rotulo = document.createElement("span");
-    rotulo.textContent = item.setor + ": " + item.prazoHoras + " h. Dentro " + item.dentro + ", perto " + item.perto + ", atrasado " + item.atrasado;
-    const campo = document.createElement("input");
-    campo.type = "number";
-    campo.min = "1";
-    campo.value = String(item.prazoHoras);
-    campo.setAttribute("aria-label", "Horas \xFAteis de " + item.setor);
-    bloco.appendChild(rotulo);
-    bloco.appendChild(campo);
-    bloco.appendChild(botao("Salvar " + item.setor, () => salvarSla(item.setor, campo.value)));
-    sla.appendChild(bloco);
-  });
+  geral.sla.forEach((item) => sla.appendChild(blocoSla(item)));
   const equipes = limpar("lista-equipes");
   (dados.equipes || []).forEach((equipe) => {
     const bloco = document.createElement("div");
-    bloco.appendChild(paragrafo(equipe.nome + " " + equipe.status));
-    if (equipe.status === "ativa") bloco.appendChild(botao("Arquivar", () => arquivarEquipe(equipe)));
+    bloco.className = "ux-linha";
+    const nome = document.createElement("b");
+    nome.textContent = equipe.nome || "Sem nome";
+    bloco.appendChild(nome);
+    bloco.appendChild(selo(equipe.status === "ativa" ? "Ativa" : "Arquivada"));
+    if (equipe.status === "ativa") {
+      const acao = botao("Arquivar", () => arquivarEquipe(equipe));
+      acao.classList.add("ux-arquivar");
+      bloco.appendChild(acao);
+    }
     equipes.appendChild(bloco);
   });
   const convites = limpar("lista-convites");
@@ -21907,29 +22091,44 @@ function pintarGerente() {
     const bloco = document.createElement("div");
     bloco.className = "ux-item";
     bloco.appendChild(paragrafo(convite.email + " " + convite.status + " " + (convite.codigo || "")));
-    bloco.appendChild(botao("Copiar c\xF3digo", async () => {
+    const botaoCopia = botao("Copiar c\xF3digo", async () => {
       try {
         await navigator.clipboard.writeText(convite.codigo || "");
         avisar("Copiado!");
+        botaoCopia.textContent = "Copiado!";
       } catch (_) {
         texto("st-convite", "C\xF3digo: " + (convite.codigo || ""));
       }
-    }));
+    });
+    bloco.appendChild(botaoCopia);
     if (convite.status === "rascunho") bloco.appendChild(botao("Cancelar", () => cancelarConvite(convite)));
     convites.appendChild(bloco);
   });
   const vinculos = limpar("lista-vinculos");
   (dados.vinculos || []).forEach((vinculo) => {
-    vinculos.appendChild(paragrafo((vinculo.nome || "Sem nome") + " " + (vinculo.email || "") + " " + vinculo.status));
+    const bloco = document.createElement("div");
+    bloco.className = "ux-linha";
+    const nome = document.createElement("b");
+    nome.textContent = (vinculo.nome || "Sem nome") + " \xB7 " + (vinculo.email || "");
+    bloco.appendChild(nome);
+    bloco.appendChild(selo(vinculo.status || "sem status"));
+    vinculos.appendChild(bloco);
   });
   const selectEquipe = $("conv-equipe");
-  if (selectEquipe && selectEquipe.options.length <= 1) {
+  if (selectEquipe) {
+    const atual = selectEquipe.value;
+    selectEquipe.replaceChildren();
+    const vazio = document.createElement("option");
+    vazio.value = "";
+    vazio.textContent = "Sem equipe";
+    selectEquipe.appendChild(vazio);
     (dados.equipes || []).filter((equipe) => equipe.status === "ativa").forEach((equipe) => {
       const opcao = document.createElement("option");
       opcao.value = equipe.id;
       opcao.textContent = equipe.nome;
       selectEquipe.appendChild(opcao);
     });
+    selectEquipe.value = atual;
   }
 }
 function preencherFiltros() {
@@ -22016,43 +22215,152 @@ function montarChips(id, itens) {
     caixa.appendChild(el);
   });
 }
-function cartaoCarro(carro) {
+function desenharEquipesInicio(geral) {
+  const caixa = limpar("lista-equipes-inicio");
+  if (!caixa) return;
+  (geral.equipesResumo || []).forEach((equipe) => {
+    const botaoEquipe = document.createElement("button");
+    botaoEquipe.type = "button";
+    if (equipeAberta === equipe.id) botaoEquipe.className = "alerta";
+    const nome = document.createElement("span");
+    nome.textContent = equipe.nome;
+    const extra = document.createElement("small");
+    extra.textContent = equipe.andamento + " ativos \xB7 " + equipe.concluidos + " conclu\xEDdos \xB7 fora " + equipe.foraSla;
+    botaoEquipe.appendChild(nome);
+    botaoEquipe.appendChild(extra);
+    botaoEquipe.addEventListener("click", () => {
+      equipeAberta = equipeAberta === equipe.id ? "" : equipe.id;
+      filtro.equipe = equipeAberta;
+      if ($("filtro-equipe")) $("filtro-equipe").value = equipeAberta;
+      desenhar();
+    });
+    caixa.appendChild(botaoEquipe);
+  });
+  const detalhe = limpar("detalhe-equipe");
+  if (!detalhe) return;
+  const escolhida = (geral.equipesResumo || []).find((equipe) => equipe.id === equipeAberta);
+  if (!escolhida) {
+    detalhe.appendChild(paragrafo("Nenhuma equipe aberta. Os n\xFAmeros acima juntam todas as equipes, setores e etapas."));
+    return;
+  }
+  const titulo = document.createElement("h3");
+  titulo.textContent = escolhida.nome;
+  detalhe.appendChild(titulo);
+  if (!escolhida.prestadores.length) detalhe.appendChild(paragrafo("Esta equipe ainda n\xE3o tem prestador vinculado."));
+  escolhida.prestadores.forEach((pessoa) => {
+    const bloco = document.createElement("article");
+    bloco.className = "ux-item";
+    const nome = document.createElement("b");
+    nome.textContent = pessoa.nome + " \xB7 " + pessoa.email;
+    bloco.appendChild(nome);
+    if (!pessoa.etapas.length) bloco.appendChild(paragrafo("Nenhum carro desta pessoa nesta equipe."));
+    pessoa.etapas.forEach((etapa) => bloco.appendChild(linhaEtapa(etapa)));
+    detalhe.appendChild(bloco);
+  });
+  detalhe.appendChild(botao("Ver esta equipe na produ\xE7\xE3o", () => {
+    telaAtual = "setores";
+    desenhar();
+  }));
+}
+function blocoSla(item) {
+  const bloco = document.createElement("div");
+  bloco.className = "ux-item";
+  const partes = GestoesLogica().partesPrazo(item.prazoHoras);
+  const rotulo = document.createElement("b");
+  rotulo.textContent = item.setor;
+  bloco.appendChild(rotulo);
+  const media = document.createElement("p");
+  media.className = "hint";
+  media.textContent = item.mediaRealMin != null ? "M\xE9dia real dos finalizados: " + GestoesLogica().fmtDuracao(item.mediaRealMin) + ". Refer\xEAncia em uso: " + GestoesLogica().fmtDuracao(item.referenciaHoras * 60) + "." : "Ainda sem finalizados. Refer\xEAncia em uso: " + GestoesLogica().fmtDuracao((item.prazoHoras || 8) * 60) + ".";
+  bloco.appendChild(media);
+  const campos = document.createElement("div");
+  campos.className = "ux-par";
+  const horas = document.createElement("input");
+  horas.type = "number";
+  horas.min = "0";
+  horas.value = String(partes.horas);
+  horas.setAttribute("aria-label", "Horas de " + item.setor);
+  const minutos = document.createElement("input");
+  minutos.type = "number";
+  minutos.min = "0";
+  minutos.max = "59";
+  minutos.value = String(partes.minutos);
+  minutos.setAttribute("aria-label", "Minutos de " + item.setor);
+  const lh = document.createElement("label");
+  lh.appendChild(document.createTextNode("Horas"));
+  lh.appendChild(horas);
+  const lm = document.createElement("label");
+  lm.appendChild(document.createTextNode("Minutos"));
+  lm.appendChild(minutos);
+  campos.appendChild(lh);
+  campos.appendChild(lm);
+  bloco.appendChild(campos);
+  bloco.appendChild(paragrafo("Dentro " + item.dentro + ", perto " + item.perto + ", fora " + item.atrasado));
+  if (item.mediaRealMin != null) {
+    bloco.appendChild(botao("Usar a m\xE9dia", () => {
+      const mediaPartes = GestoesLogica().partesPrazo(item.mediaRealMin / 60);
+      horas.value = String(mediaPartes.horas);
+      minutos.value = String(mediaPartes.minutos);
+    }));
+  }
+  bloco.appendChild(botao("Salvar " + item.setor, () => salvarSla(item.setor, horas.value, minutos.value)));
+  return bloco;
+}
+function GestoesLogica() {
+  return globalThis.FolhaGestaoProducao;
+}
+function cartaoOs(card) {
   const bloco = document.createElement("article");
   bloco.className = "ux-item";
   const os = document.createElement("div");
   os.className = "ux-os";
-  os.textContent = carro.os || "Sem OS";
+  os.textContent = card.os || "Sem OS";
   bloco.appendChild(os);
   const veiculo = document.createElement("p");
-  veiculo.textContent = carro.veiculo || "Ve\xEDculo n\xE3o informado";
+  veiculo.textContent = card.veiculo || "Ve\xEDculo n\xE3o informado";
   bloco.appendChild(veiculo);
-  bloco.appendChild(selo(carro.setor));
-  bloco.appendChild(selo(carro.situacao));
-  if (carro.prestadorNome) bloco.appendChild(selo(carro.prestadorNome));
-  if (String(carro.tempo || "").indexOf(" de ") >= 0) {
-    const barra = document.createElement("div");
-    barra.className = "ux-bar" + (carro.atrasado ? " atrasado" : "");
-    const marca = document.createElement("i");
-    marca.style.width = Math.max(0, Math.min(100, carro.pct || 0)) + "%";
-    barra.appendChild(marca);
-    bloco.appendChild(barra);
-  }
-  const tempo = document.createElement("p");
-  tempo.className = "hint";
-  tempo.textContent = carro.tempo;
-  bloco.appendChild(tempo);
-  (carro.pausasOperacao || []).forEach((pausa) => bloco.appendChild(paragrafo("Pausa: " + (pausa.outro || pausa.motivo || "sem motivo"))));
-  (carro.expediente || []).forEach(() => bloco.appendChild(seloFim()));
+  (card.etapas || []).forEach((etapa) => bloco.appendChild(linhaEtapa(etapa)));
   return bloco;
+}
+function linhaEtapa(etapa) {
+  const linha = document.createElement("div");
+  linha.className = "ux-etapa" + (etapa.atrasado ? " atrasado" : etapa.dataTermino ? " ok" : "");
+  const titulo = document.createElement("b");
+  titulo.textContent = (etapa.setor || "Setor") + " \xB7 " + (etapa.prestadorNome || "Sem prestador");
+  linha.appendChild(titulo);
+  linha.appendChild(selo(etapa.situacao));
+  linha.appendChild(paragrafo("In\xEDcio " + etapa.horaInicioTexto + " \xB7 pausa " + etapa.horaPausaTexto + " \xB7 t\xE9rmino " + etapa.horaTerminoTexto));
+  linha.appendChild(paragrafo("Tempo \xFAtil " + etapa.tempo));
+  if (String(etapa.tempo || "").indexOf(" de ") >= 0) {
+    const barra = document.createElement("div");
+    barra.className = "ux-bar" + (etapa.atrasado ? " atrasado" : "");
+    const marca = document.createElement("i");
+    marca.style.width = Math.max(0, Math.min(100, etapa.pct || 0)) + "%";
+    barra.appendChild(marca);
+    linha.appendChild(barra);
+  }
+  (etapa.pausasOperacao || []).forEach((pausa) => linha.appendChild(paragrafo("Pausa: " + (pausa.outro || pausa.motivo || "sem motivo"))));
+  (etapa.expediente || []).forEach(() => linha.appendChild(seloFim()));
+  (etapa.almoco || []).forEach(() => linha.appendChild(seloAlmoco()));
+  return linha;
 }
 function selo(rotulo) {
   const el = document.createElement("span");
-  el.className = "ux-selo";
+  const s = String(rotulo || "").toLowerCase();
+  let cor = "";
+  if (s === "ativa" || s === "ativo" || s === "finalizado" || s === "rascunho") cor = " ok";
+  else if (s === "arquivada" || s === "cancelado" || s === "revogado") cor = " fim";
+  el.className = "ux-selo" + cor;
   el.textContent = rotulo || "";
   return el;
 }
 function seloFim() {
   const el = selo("Fim de expediente");
+  el.classList.add("fim");
+  return el;
+}
+function seloAlmoco() {
+  const el = selo("Almo\xE7o/caf\xE9");
   el.classList.add("fim");
   return el;
 }
@@ -22067,16 +22375,17 @@ function pintarPrestador() {
 function entrarDemonstracao() {
   dados = T.exemploLocal();
   filtro = { equipe: "", prestador: "", setor: "", situacao: "", busca: "" };
+  equipeAberta = "";
   estado.demonstracao = true;
   estado.situacao = "";
   estado.papel = "gerente";
   telaAtual = "inicio";
   desenhar();
 }
-async function salvarSla(setor, horas) {
-  const prazo = Number(horas);
-  if (!prazo || prazo <= 0) {
-    texto("st-empresa", "Informe um prazo maior que zero.");
+async function salvarSla(setor, horas, minutos) {
+  const prazo = GestoesLogica().prazoDecimal(horas, minutos == null ? 0 : minutos);
+  if (prazo == null) {
+    texto("st-empresa", "Informe horas e minutos v\xE1lidos.");
     return;
   }
   if (estado.demonstracao) {
@@ -22232,6 +22541,7 @@ $("btn-sair-demo").addEventListener("click", () => {
   estado.papel = "";
   dados = null;
   filtro = { equipe: "", prestador: "", setor: "", situacao: "", busca: "" };
+  equipeAberta = "";
   if (estado.sessao) conferir();
   else desenhar();
 });
@@ -22241,7 +22551,7 @@ $("busca-carro").addEventListener("input", () => {
 });
 $("btn-demo-entrada").addEventListener("click", entrarDemonstracao);
 $("btn-demo-sql").addEventListener("click", entrarDemonstracao);
-$("btn-sair").addEventListener("click", sair);
+if ($("btn-sair")) $("btn-sair").addEventListener("click", sair);
 $("btn-sair-expirada").addEventListener("click", sair);
 $("btn-sair-temporario").addEventListener("click", sair);
 $("btn-sair-sql").addEventListener("click", sair);

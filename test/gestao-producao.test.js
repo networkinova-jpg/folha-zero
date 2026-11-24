@@ -110,3 +110,56 @@ test('indicadores separam os 10 setores, as causas e o SLA', () => {
   assert.equal(JSON.stringify(resultado).includes('999'), false);
   assert.equal(JSON.stringify(resultado).includes('\u2014'), false);
 });
+
+test('média real, horas e minutos, e almoço fora do SLA', () => {
+  assert.equal(g.fmtDuracao(90), '1h 30min');
+  assert.equal(g.fmtDuracao(45), '45 min');
+  assert.equal(g.fmtDuracao(480), '8h');
+  assert.equal(g.prazoDecimal(4, 15), 4.25);
+  assert.equal(g.prazoDecimal(1, 30), 1.5);
+  assert.equal(g.prazoDecimal(0, 45), 0.75);
+  assert.deepEqual(g.partesPrazo(4.25), { horas: 4, minutos: 15 });
+  assert.equal(g.prazoDecimal(0, 0), null);
+  const almoco = g.tempoUtil(carro({
+    horaTermino: '14:00',
+    pausas: [
+      { motivo: 'Almoço/café', outro: false, inicio: '2026-11-02T12:00', fim: '2026-11-02T13:00' },
+      { motivo: 'Faltando peça', outro: false, inicio: '2026-11-02T10:00', fim: '2026-11-02T10:20' }
+    ]
+  }), AGORA);
+  assert.equal(almoco.fora, 60);
+  assert.equal(almoco.pausa, 20);
+  assert.equal(almoco.minutos, 280);
+  const resultado = g.indicadores({
+    inicio: '2026-11-01',
+    fim: '2026-11-30',
+    agora: AGORA,
+    sla: [{ setor: 'Desmontagem', prazoHoras: 8 }],
+    carros: [
+      carro({
+        os: 'OS-A', setor: 'Desmontagem', horaTermino: '12:00',
+        pausas: [{ motivo: 'Almoço/café', outro: false, inicio: '2026-11-02T11:00', fim: '2026-11-02T11:30' }]
+      }),
+      carro({
+        os: 'OS-B', setor: 'Desmontagem', dataInicio: '2026-11-03', dataTermino: '2026-11-03', horaInicio: '08:00', horaTermino: '13:00',
+        pausas: [{ motivo: 'Almoço/café', outro: true, inicio: '2026-11-03T12:00', fim: '2026-11-03T13:00' }]
+      }),
+      carro({
+        os: 'OS-C', setor: 'Manta', dataTermino: '', horaTermino: '',
+        pausas: [{ motivo: 'Almoço/café', outro: false, inicio: '2026-11-02T12:00', fim: null }]
+      })
+    ]
+  });
+  const desm = resultado.sla.find((item) => item.setor === 'Desmontagem');
+  assert.equal(desm.usouMedia, true);
+  assert.equal(desm.mediaRealMin, 225);
+  assert.equal(g.fmtDuracao(desm.mediaRealMin), '3h 45min');
+  const manta = resultado.sla.find((item) => item.setor === 'Manta');
+  assert.equal(manta.usouMedia, false);
+  assert.equal(manta.prazoHoras, 8);
+  assert.equal(resultado.inicio.pausasAbertas, 0);
+  const causas = resultado.pausas.filter((item) => item.qtd);
+  assert.equal(causas.some((item) => item.motivo === 'Almoço/café' && item.fimExp), true);
+  assert.equal(causas[causas.length - 1].motivo === g.FIM || causas[causas.length - 1].motivo === 'Almoço/café', true);
+  assert.equal(resultado.gargalos.maisPausa === 'Desmontagem' || resultado.porSetor.find((item) => item.setor === 'Desmontagem').pausaMin === 0, true);
+});

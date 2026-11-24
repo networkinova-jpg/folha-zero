@@ -97,29 +97,82 @@
 
   function montarPainel(dados, filtro) {
     const base = dados || {};
-    const carros = filtrarCarros(base.carros, filtro).map((carro) => detalheCarro(carro, base.sla, base.agora));
-    const ind = logica().indicadores({
-      carros: carros,
+    const geral = logica().indicadores({
+      carros: base.carros,
       inicio: base.inicio,
       fim: base.fim,
       agora: base.agora,
       sla: base.sla
+    });
+    const escolhidos = filtrarCarros(base.carros, filtro);
+    const ind = logica().indicadores({
+      carros: escolhidos,
+      inicio: base.inicio,
+      fim: base.fim,
+      agora: base.agora,
+      sla: base.sla
+    });
+    const detalhes = (base.carros || []).map((carro) => detalheCarro(carro, geral.sla, base.agora));
+    const osVistos = {};
+    escolhidos.forEach((carro) => { osVistos[carro.os || 'Sem OS'] = true; });
+    const ordem = logica().SETORES.concat([logica().OUTROS]);
+    const porOs = {};
+    detalhes.forEach((carro) => {
+      const chave = carro.os || 'Sem OS';
+      if (!porOs[chave]) porOs[chave] = { os: chave, veiculo: carro.veiculo || '', etapas: [] };
+      if (!porOs[chave].veiculo && carro.veiculo) porOs[chave].veiculo = carro.veiculo;
+      porOs[chave].etapas.push(carro);
+    });
+    const os = Object.keys(porOs).filter((chave) => osVistos[chave]).map((chave) => {
+      const card = porOs[chave];
+      card.etapas.sort((a, b) => ordem.indexOf(a.grupo) - ordem.indexOf(b.grupo) || String(a.dataInicio).localeCompare(String(b.dataInicio)));
+      return card;
     });
     return {
       ativos: ind.inicio.andamento,
       pausados: ind.inicio.pausasAbertas,
       concluidos: ind.inicio.finalizados,
       foraSla: ind.inicio.foraSla,
+      dentro: geral.inicio.dentro,
+      perto: geral.inicio.perto,
+      mediaGeral: logica().fmtDuracao(geral.inicio.mediaGeralMin),
       gargalos: [ind.gargalos.etapaAnterior, ind.gargalos.maiorTempoUtil, ind.gargalos.maisPausa],
       porSetor: ind.porSetor,
       pausas: ind.pausas,
-      sla: ind.sla,
-      fora: carrosFora(carros, base.sla, base.agora),
+      sla: geral.sla,
+      fora: detalhes.filter((carro) => carro.atrasado && osVistos[carro.os || 'Sem OS']),
       equipes: base.equipes || [],
       vinculos: base.vinculos || [],
       convites: base.convites || [],
-      carros: carros
+      carros: detalhes.filter((carro) => osVistos[carro.os || 'Sem OS']),
+      os: os,
+      equipesResumo: resumoEquipes(detalhes, base.equipes || [], base.vinculos || [])
     };
+  }
+
+  function resumoEquipes(detalhes, equipes, vinculos) {
+    return (equipes || []).map((equipe) => {
+      const etapas = detalhes.filter((carro) => (carro.equipeId || '') === equipe.id);
+      const pessoas = {};
+      etapas.forEach((carro) => {
+        const email = carro.prestadorEmail || '';
+        if (!pessoas[email]) pessoas[email] = { email: email, nome: carro.prestadorNome || 'Sem nome', etapas: [] };
+        pessoas[email].etapas.push(carro);
+      });
+      (vinculos || []).filter((item) => (item.equipe_id || item.equipeId) === equipe.id).forEach((item) => {
+        const email = item.email || '';
+        if (!pessoas[email]) pessoas[email] = { email: email, nome: item.nome || 'Sem nome', etapas: [] };
+      });
+      return {
+        id: equipe.id,
+        nome: equipe.nome,
+        status: equipe.status,
+        andamento: etapas.filter((carro) => !carro.dataTermino).length,
+        concluidos: etapas.filter((carro) => !!carro.dataTermino).length,
+        foraSla: etapas.filter((carro) => carro.atrasado).length,
+        prestadores: Object.keys(pessoas).map((email) => pessoas[email])
+      };
+    });
   }
 
   function detalheCarro(carro, sla, agora) {
@@ -127,23 +180,30 @@
     const grupo = logica().agruparSetor(n.setor);
     const prazoItem = (sla || []).find((item) => item.setor === grupo);
     const oficial = logica().SETORES.indexOf(grupo) >= 0;
-    const prazo = prazoItem
-      ? Number(prazoItem.prazoHoras != null ? prazoItem.prazoHoras : prazoItem.prazo_horas_uteis)
+    const referencia = prazoItem && prazoItem.referenciaHoras != null
+      ? Number(prazoItem.referenciaHoras)
       : (oficial ? logica().SLA_PADRAO : null);
+    const usouMedia = !!(prazoItem && prazoItem.usouMedia);
     const util = logica().tempoUtil(n, agora);
-    const limite = prazo ? prazo * 60 : null;
+    const limite = referencia != null ? referencia * 60 : null;
     const pct = util.horas && limite ? Math.min(100, Math.round((util.minutos / limite) * 100)) : 0;
-    const fim = logica().FIM;
+    const atrasado = !!(util.horas && limite != null && (usouMedia ? util.minutos > limite : util.minutos >= limite));
     const tempo = !util.horas
       ? 'Sem hora para calcular o SLA'
-      : (limite ? Math.round(util.minutos / 60) + ' h úteis de ' + prazo + ' h' : Math.round(util.minutos / 60) + ' h úteis. Este grupo não tem SLA.');
+      : (limite != null ? logica().fmtDuracao(util.minutos) + ' de ' + logica().fmtDuracao(limite) : logica().fmtDuracao(util.minutos) + '. Este grupo não tem SLA.');
+    const pausaAberta = (n.pausas || []).filter((pausa) => !pausa.fim);
     return Object.assign({}, n, {
       grupo: grupo,
       pct: pct,
-      atrasado: !!(util.horas && limite && util.minutos >= limite),
+      atrasado: atrasado,
+      perto: !!(util.horas && limite != null && !atrasado && util.minutos >= limite * 0.8 && !(usouMedia && util.minutos >= limite)),
       tempo: tempo,
-      pausasOperacao: (n.pausas || []).filter((p) => !(p.motivo === fim && !p.outro)),
-      expediente: (n.pausas || []).filter((p) => p.motivo === fim && !p.outro)
+      horaInicioTexto: n.horaInicio || 'sem hora',
+      horaPausaTexto: pausaAberta.length ? (pausaAberta[0].inicio || '').slice(11, 16) || 'aberta' : 'sem pausa aberta',
+      horaTerminoTexto: n.horaTermino || (n.dataTermino ? 'sem hora' : 'em aberto'),
+      pausasOperacao: (n.pausas || []).filter((pausa) => !logica().tipoFora(pausa)),
+      expediente: (n.pausas || []).filter((pausa) => logica().tipoFora(pausa) === logica().FIM),
+      almoco: (n.pausas || []).filter((pausa) => logica().tipoFora(pausa) === logica().ALMOCO)
     });
   }
 
@@ -155,36 +215,49 @@
       fim: '2026-11-30',
       agora: '2026-11-23T18:00',
       equipes: [
-        { id: 'equipe-a', nome: 'Time A', status: 'ativa' },
-        { id: 'equipe-b', nome: 'Time B', status: 'ativa' }
+        { id: 'equipe-montagem', nome: 'Montagem', status: 'ativa' },
+        { id: 'equipe-vidro', nome: 'Vidro', status: 'ativa' },
+        { id: 'equipe-tapecaria', nome: 'Tapeçaria', status: 'ativa' }
       ],
       vinculos: [
-        { vinculo: 'v1', email: 'ana@example.invalid', nome: 'Ana', equipe_id: 'equipe-a', status: 'ativo' },
-        { vinculo: 'v2', email: 'bruno@example.invalid', nome: 'Bruno', equipe_id: 'equipe-b', status: 'ativo' },
-        { vinculo: 'v3', email: 'carla@example.invalid', nome: 'Carla', equipe_id: 'equipe-a', status: 'ativo' }
+        { vinculo: 'v1', email: 'ana@example.invalid', nome: 'Ana', equipe_id: 'equipe-montagem', status: 'ativo' },
+        { vinculo: 'v2', email: 'bruno@example.invalid', nome: 'Bruno', equipe_id: 'equipe-vidro', status: 'ativo' },
+        { vinculo: 'v3', email: 'carla@example.invalid', nome: 'Carla', equipe_id: 'equipe-tapecaria', status: 'ativo' }
       ],
       convites: [
         { id: 'c1', codigo: 'exemplo10', email: 'novo@example.invalid', status: 'rascunho' }
       ],
-      sla: logica().SETORES.map((setor) => ({ setor: setor, prazoHoras: setor === 'Vidro' ? 6 : logica().SLA_PADRAO })),
+      sla: logica().SETORES.map((setor) => ({ setor: setor, prazoHoras: logica().SLA_PADRAO })),
       dispositivo: { ativo: true, dispositivo_id: 'exemplo-celular-01', rotulo: 'Celular de exemplo' },
       carros: [
         {
-          os: 'OS-100', veiculo: 'Exemplo tapa', setor: 'Tapeçaria', situacao: 'Aguardando etapa anterior',
-          dataInicio: '2026-11-20', horaInicio: '08:00', dataTermino: '', horaTermino: '',
-          equipeId: 'equipe-a', prestadorEmail: 'ana@example.invalid', prestadorNome: 'Ana',
-          pausas: [{ motivo: 'Aguardando etapa anterior', outro: false, inicio: '2026-11-20T16:00', fim: null }]
+          os: 'OS-100', veiculo: 'Hilux exemplo', setor: 'Desmontagem', situacao: 'Finalizado',
+          dataInicio: '2026-11-18', horaInicio: '08:00', dataTermino: '2026-11-18', horaTermino: '12:00',
+          equipeId: 'equipe-montagem', prestadorEmail: 'ana@example.invalid', prestadorNome: 'Ana',
+          pausas: []
         },
         {
-          os: 'OS-200', veiculo: 'Exemplo vidro', setor: 'Vidro', situacao: 'Finalizado',
-          dataInicio: '2026-11-10', horaInicio: '08:00', dataTermino: '2026-11-10', horaTermino: '12:00',
-          equipeId: 'equipe-b', prestadorEmail: 'bruno@example.invalid', prestadorNome: 'Bruno',
-          pausas: [{ motivo: 'Faltando vidro', outro: false, inicio: '2026-11-10T09:00', fim: '2026-11-10T09:20' }]
+          os: 'OS-100', veiculo: 'Hilux exemplo', setor: 'Manta', situacao: 'Finalizado',
+          dataInicio: '2026-11-19', horaInicio: '08:00', dataTermino: '2026-11-19', horaTermino: '12:30',
+          equipeId: 'equipe-montagem', prestadorEmail: 'ana@example.invalid', prestadorNome: 'Ana',
+          pausas: [{ motivo: 'Almoço/café', outro: false, inicio: '2026-11-19T12:00', fim: '2026-11-19T12:30' }]
+        },
+        {
+          os: 'OS-100', veiculo: 'Hilux exemplo', setor: 'Vidro', situacao: 'Finalizado',
+          dataInicio: '2026-11-20', horaInicio: '08:00', dataTermino: '2026-11-20', horaTermino: '14:00',
+          equipeId: 'equipe-vidro', prestadorEmail: 'bruno@example.invalid', prestadorNome: 'Bruno',
+          pausas: [{ motivo: 'Almoço/café', outro: false, inicio: '2026-11-20T12:00', fim: '2026-11-20T13:00' }]
+        },
+        {
+          os: 'OS-100', veiculo: 'Hilux exemplo', setor: 'Tapeçaria', situacao: 'Aguardando etapa anterior',
+          dataInicio: '2026-11-23', horaInicio: '08:00', dataTermino: '', horaTermino: '',
+          equipeId: 'equipe-tapecaria', prestadorEmail: 'carla@example.invalid', prestadorNome: 'Carla',
+          pausas: [{ motivo: 'Aguardando etapa anterior', outro: false, inicio: '2026-11-23T14:00', fim: null }]
         },
         {
           os: 'OS-300', veiculo: 'Exemplo steel', setor: 'Steel', situacao: 'Finalizado',
           dataInicio: '2026-11-12', horaInicio: '08:00', dataTermino: '2026-11-12', horaTermino: '17:00',
-          equipeId: 'equipe-a', prestadorEmail: 'carla@example.invalid', prestadorNome: 'Carla',
+          equipeId: 'equipe-montagem', prestadorEmail: 'ana@example.invalid', prestadorNome: 'Ana',
           pausas: [{ motivo: 'Fim de expediente', outro: false, inicio: '2026-11-12T12:00', fim: '2026-11-12T13:00' }],
           valor: 999, observacao: 'nao mostrar'
         }

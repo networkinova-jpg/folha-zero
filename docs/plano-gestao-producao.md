@@ -7,7 +7,15 @@ Decisões aprovadas por Ricardo em 23/11/2026. As quatro sugestões da seção 9
 3. Um vínculo ativo por prestador. Para mudar de empresa, ele revoga o consentimento anterior e aceita o novo convite.
 4. O gerente define o SLA em horas úteis, nos 10 setores da empresa dele. Os dez começam com 8 horas úteis e ele ajusta quando quiser.
 
-A migração de revisão está em `supabase/migrations/20261123210000_gestao_producao.sql`. Ela não foi aplicada no Supabase. Este plano não publica o site, não mexe em `main` e não altera `folhazero_v1`.
+Decisões aprovadas por Ricardo em 24/11/2026, depois dos testes do dia:
+
+1. Cada gestor vê só a própria empresa e, dentro dela, todas as equipes. O Início junta todas as equipes, setores e etapas. O detalhe abre uma equipe e mostra, por prestador, início, pausa, tempo útil, situação e SLA.
+2. O gestor cria várias equipes e vincula o prestador pelo e-mail da conta dele no app. Iniciar, pausar e finalizar sobem para a equipe do vínculo ativo. A aba Equipes e convites fica em quatro cartões: criar, equipes, vincular e convites.
+3. Na Produção, cada OS mostra todas as etapas já percorridas, na ordem dos 10 setores, com horário, tempo útil e SLA.
+4. A referência de SLA do setor é a média real do tempo útil dos carros finalizados. Sem finalizado, vale o prazo salvo, que começa em 8h. O gerente ajusta em horas e minutos. O banco continua guardando `prazo_horas_uteis` decimal.
+5. `Almoço/café` é pausa fixa, igual a `Fim de expediente`: sai do tempo útil e do SLA e não entra nos gargalos operacionais. A migração nova, só para revisão, é `supabase/migrations/20261124000000_gestao_pausa_almoco_cafe.sql`. A migração `20261123210000_gestao_producao.sql` não é reeditada.
+
+A migração `supabase/migrations/20261123210000_gestao_producao.sql` já foi aplicada no Supabase. A de 24/11 fica só para revisão e não foi aplicada. Este plano não publica o site, não mexe em `main` e não altera `folhazero_v1`.
 
 Este texto é só o plano. Não publica o site, não mexe em `main`, não altera o banco e não entra no app oficial. O modo Individual e a chave `folhazero_v1` continuam como estão. Nada deste arquivo deve ser aplicado no Supabase.
 
@@ -99,6 +107,7 @@ Todas no schema `public`, com RLS ligada e sem concessão de `SELECT`, `INSERT`,
 - `id`, `carro_id` (liga em `gestao_carros.id`), `motivo`, `outro` (sim ou não), `inicio`, `fim`.
 - Motivos oficiais, nesta ordem: Faltando peça, Faltando vidro, Problemas elétricos, Problemas com vidro, Aguardando etapa anterior, Aguardando vidraceiro, Aguardando ajuste da produção, Impasse na resolução de um problema.
 - "Fim de expediente" é motivo especial, como no app: não entra no tempo útil do carro e aparece separado no relatório.
+- Desde 24/11/2026, "Almoço/café" segue a mesma regra: sai do tempo útil e não entra no gargalo operacional.
 - "Outro motivo" guarda o texto digitado, com o mesmo limite já usado no app (60 caracteres).
 
 **`gestao_sla`.** Prazo da empresa por setor.

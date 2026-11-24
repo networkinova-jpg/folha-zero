@@ -34,5 +34,8 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrati
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/test/sql/painel-pessoas-ativas.sql"
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261123210000_gestao_producao.sql"
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261123210000_gestao_producao.sql"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261124000000_gestao_pausa_almoco_cafe.sql"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/supabase/migrations/20261124000000_gestao_pausa_almoco_cafe.sql"
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/test/sql/gestao-producao.sql"
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${db}" -f "${raiz}/test/sql/gestao-almoco.sql"
 echo "sql ok ${db}"

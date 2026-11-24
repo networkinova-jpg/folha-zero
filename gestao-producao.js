@@ -16,6 +16,7 @@ let estado = { sessao: false, situacao: '', papel: 'nenhum', demonstracao: false
 let telaAtual = 'inicio';
 let dados = null;
 let filtro = { equipe: '', prestador: '', setor: '', situacao: '', busca: '' };
+let equipeAberta = '';
 let toastTimer = 0;
 
 function texto(id, valor) {
@@ -132,12 +133,16 @@ function avisar(msg) {
 }
 
 function pintarGerente() {
+  const geral = T.montarPainel(dados, {});
   const painel = T.montarPainel(dados, filtro);
-  texto('st-empresa', (estado.demonstracao ? T.ROTULO_EXEMPLO + ' ' : '') + (dados.empresaNome || ''));
-  texto('n-ativos', painel.ativos);
-  texto('n-pausados', painel.pausados);
-  texto('n-concluidos', painel.concluidos);
-  texto('n-fora', painel.foraSla);
+  texto('st-empresa', (estado.demonstracao ? T.ROTULO_EXEMPLO + ' ' : '') + (dados.empresaNome || 'Sua empresa'));
+  texto('n-ativos', geral.ativos);
+  texto('n-pausados', geral.pausados);
+  texto('n-concluidos', geral.concluidos);
+  texto('n-fora', geral.foraSla);
+  texto('n-dentro', geral.dentro);
+  texto('n-perto', geral.perto);
+  texto('n-media', geral.mediaGeral);
   const gargalos = limpar('lista-gargalos');
   [
     'Mais carros aguardando etapa anterior: ' + painel.gargalos[0],
@@ -164,8 +169,9 @@ function pintarGerente() {
     setores.appendChild(botaoSetor);
   });
   const carros = limpar('lista-carros');
-  if (!painel.carros.length) carros.appendChild(paragrafo('Nenhum carro neste filtro.'));
-  painel.carros.forEach((carro) => carros.appendChild(cartaoCarro(carro)));
+  if (!painel.os.length) carros.appendChild(paragrafo('Nenhum carro neste filtro.'));
+  painel.os.forEach((card) => carros.appendChild(cartaoOs(card)));
+  desenharEquipesInicio(geral);
   const pausas = limpar('lista-pausas');
   painel.pausas.forEach((item) => {
     if (!item.qtd && !item.fimExp) return;
@@ -178,26 +184,20 @@ function pintarGerente() {
     fora.appendChild(paragrafo(carro.os + ' ' + carro.veiculo + ' ' + carro.setor + ' ' + carro.prestadorNome));
   });
   const sla = limpar('lista-sla');
-  painel.sla.forEach((item) => {
-    const bloco = document.createElement('div');
-    bloco.className = 'ux-item';
-    const rotulo = document.createElement('span');
-    rotulo.textContent = item.setor + ': ' + item.prazoHoras + ' h. Dentro ' + item.dentro + ', perto ' + item.perto + ', atrasado ' + item.atrasado;
-    const campo = document.createElement('input');
-    campo.type = 'number';
-    campo.min = '1';
-    campo.value = String(item.prazoHoras);
-    campo.setAttribute('aria-label', 'Horas úteis de ' + item.setor);
-    bloco.appendChild(rotulo);
-    bloco.appendChild(campo);
-    bloco.appendChild(botao('Salvar ' + item.setor, () => salvarSla(item.setor, campo.value)));
-    sla.appendChild(bloco);
-  });
+  geral.sla.forEach((item) => sla.appendChild(blocoSla(item)));
   const equipes = limpar('lista-equipes');
   (dados.equipes || []).forEach((equipe) => {
     const bloco = document.createElement('div');
-    bloco.appendChild(paragrafo(equipe.nome + ' ' + equipe.status));
-    if (equipe.status === 'ativa') bloco.appendChild(botao('Arquivar', () => arquivarEquipe(equipe)));
+    bloco.className = 'ux-linha';
+    const nome = document.createElement('b');
+    nome.textContent = equipe.nome || 'Sem nome';
+    bloco.appendChild(nome);
+    bloco.appendChild(selo(equipe.status === 'ativa' ? 'Ativa' : 'Arquivada'));
+    if (equipe.status === 'ativa') {
+      const acao = botao('Arquivar', () => arquivarEquipe(equipe));
+      acao.classList.add('ux-arquivar');
+      bloco.appendChild(acao);
+    }
     equipes.appendChild(bloco);
   });
   const convites = limpar('lista-convites');
@@ -205,29 +205,44 @@ function pintarGerente() {
     const bloco = document.createElement('div');
     bloco.className = 'ux-item';
     bloco.appendChild(paragrafo(convite.email + ' ' + convite.status + ' ' + (convite.codigo || '')));
-    bloco.appendChild(botao('Copiar código', async () => {
+    const botaoCopia = botao('Copiar código', async () => {
       try {
         await navigator.clipboard.writeText(convite.codigo || '');
         avisar('Copiado!');
+        botaoCopia.textContent = 'Copiado!';
       } catch (_) {
         texto('st-convite', 'Código: ' + (convite.codigo || ''));
       }
-    }));
+    });
+    bloco.appendChild(botaoCopia);
     if (convite.status === 'rascunho') bloco.appendChild(botao('Cancelar', () => cancelarConvite(convite)));
     convites.appendChild(bloco);
   });
   const vinculos = limpar('lista-vinculos');
   (dados.vinculos || []).forEach((vinculo) => {
-    vinculos.appendChild(paragrafo((vinculo.nome || 'Sem nome') + ' ' + (vinculo.email || '') + ' ' + vinculo.status));
+    const bloco = document.createElement('div');
+    bloco.className = 'ux-linha';
+    const nome = document.createElement('b');
+    nome.textContent = (vinculo.nome || 'Sem nome') + ' · ' + (vinculo.email || '');
+    bloco.appendChild(nome);
+    bloco.appendChild(selo(vinculo.status || 'sem status'));
+    vinculos.appendChild(bloco);
   });
   const selectEquipe = $('conv-equipe');
-  if (selectEquipe && selectEquipe.options.length <= 1) {
+  if (selectEquipe) {
+    const atual = selectEquipe.value;
+    selectEquipe.replaceChildren();
+    const vazio = document.createElement('option');
+    vazio.value = '';
+    vazio.textContent = 'Sem equipe';
+    selectEquipe.appendChild(vazio);
     (dados.equipes || []).filter((equipe) => equipe.status === 'ativa').forEach((equipe) => {
       const opcao = document.createElement('option');
       opcao.value = equipe.id;
       opcao.textContent = equipe.nome;
       selectEquipe.appendChild(opcao);
     });
+    selectEquipe.value = atual;
   }
 }
 
@@ -295,6 +310,139 @@ function montarChips(id, itens) {
   });
 }
 
+function desenharEquipesInicio(geral) {
+  const caixa = limpar('lista-equipes-inicio');
+  if (!caixa) return;
+  (geral.equipesResumo || []).forEach((equipe) => {
+    const botaoEquipe = document.createElement('button');
+    botaoEquipe.type = 'button';
+    if (equipeAberta === equipe.id) botaoEquipe.className = 'alerta';
+    const nome = document.createElement('span');
+    nome.textContent = equipe.nome;
+    const extra = document.createElement('small');
+    extra.textContent = equipe.andamento + ' ativos · ' + equipe.concluidos + ' concluídos · fora ' + equipe.foraSla;
+    botaoEquipe.appendChild(nome);
+    botaoEquipe.appendChild(extra);
+    botaoEquipe.addEventListener('click', () => {
+      equipeAberta = equipeAberta === equipe.id ? '' : equipe.id;
+      filtro.equipe = equipeAberta;
+      if ($('filtro-equipe')) $('filtro-equipe').value = equipeAberta;
+      desenhar();
+    });
+    caixa.appendChild(botaoEquipe);
+  });
+  const detalhe = limpar('detalhe-equipe');
+  if (!detalhe) return;
+  const escolhida = (geral.equipesResumo || []).find((equipe) => equipe.id === equipeAberta);
+  if (!escolhida) {
+    detalhe.appendChild(paragrafo('Nenhuma equipe aberta. Os números acima juntam todas as equipes, setores e etapas.'));
+    return;
+  }
+  const titulo = document.createElement('h3');
+  titulo.textContent = escolhida.nome;
+  detalhe.appendChild(titulo);
+  if (!escolhida.prestadores.length) detalhe.appendChild(paragrafo('Esta equipe ainda não tem prestador vinculado.'));
+  escolhida.prestadores.forEach((pessoa) => {
+    const bloco = document.createElement('article');
+    bloco.className = 'ux-item';
+    const nome = document.createElement('b');
+    nome.textContent = pessoa.nome + ' · ' + pessoa.email;
+    bloco.appendChild(nome);
+    if (!pessoa.etapas.length) bloco.appendChild(paragrafo('Nenhum carro desta pessoa nesta equipe.'));
+    pessoa.etapas.forEach((etapa) => bloco.appendChild(linhaEtapa(etapa)));
+    detalhe.appendChild(bloco);
+  });
+  detalhe.appendChild(botao('Ver esta equipe na produção', () => { telaAtual = 'setores'; desenhar(); }));
+}
+
+function blocoSla(item) {
+  const bloco = document.createElement('div');
+  bloco.className = 'ux-item';
+  const partes = GestoesLogica().partesPrazo(item.prazoHoras);
+  const rotulo = document.createElement('b');
+  rotulo.textContent = item.setor;
+  bloco.appendChild(rotulo);
+  const media = document.createElement('p');
+  media.className = 'hint';
+  media.textContent = item.mediaRealMin != null
+    ? 'Média real dos finalizados: ' + GestoesLogica().fmtDuracao(item.mediaRealMin) + '. Referência em uso: ' + GestoesLogica().fmtDuracao(item.referenciaHoras * 60) + '.'
+    : 'Ainda sem finalizados. Referência em uso: ' + GestoesLogica().fmtDuracao((item.prazoHoras || 8) * 60) + '.';
+  bloco.appendChild(media);
+  const campos = document.createElement('div');
+  campos.className = 'ux-par';
+  const horas = document.createElement('input');
+  horas.type = 'number';
+  horas.min = '0';
+  horas.value = String(partes.horas);
+  horas.setAttribute('aria-label', 'Horas de ' + item.setor);
+  const minutos = document.createElement('input');
+  minutos.type = 'number';
+  minutos.min = '0';
+  minutos.max = '59';
+  minutos.value = String(partes.minutos);
+  minutos.setAttribute('aria-label', 'Minutos de ' + item.setor);
+  const lh = document.createElement('label');
+  lh.appendChild(document.createTextNode('Horas'));
+  lh.appendChild(horas);
+  const lm = document.createElement('label');
+  lm.appendChild(document.createTextNode('Minutos'));
+  lm.appendChild(minutos);
+  campos.appendChild(lh);
+  campos.appendChild(lm);
+  bloco.appendChild(campos);
+  bloco.appendChild(paragrafo('Dentro ' + item.dentro + ', perto ' + item.perto + ', fora ' + item.atrasado));
+  if (item.mediaRealMin != null) {
+    bloco.appendChild(botao('Usar a média', () => {
+      const mediaPartes = GestoesLogica().partesPrazo(item.mediaRealMin / 60);
+      horas.value = String(mediaPartes.horas);
+      minutos.value = String(mediaPartes.minutos);
+    }));
+  }
+  bloco.appendChild(botao('Salvar ' + item.setor, () => salvarSla(item.setor, horas.value, minutos.value)));
+  return bloco;
+}
+
+function GestoesLogica() {
+  return globalThis.FolhaGestaoProducao;
+}
+
+function cartaoOs(card) {
+  const bloco = document.createElement('article');
+  bloco.className = 'ux-item';
+  const os = document.createElement('div');
+  os.className = 'ux-os';
+  os.textContent = card.os || 'Sem OS';
+  bloco.appendChild(os);
+  const veiculo = document.createElement('p');
+  veiculo.textContent = card.veiculo || 'Veículo não informado';
+  bloco.appendChild(veiculo);
+  (card.etapas || []).forEach((etapa) => bloco.appendChild(linhaEtapa(etapa)));
+  return bloco;
+}
+
+function linhaEtapa(etapa) {
+  const linha = document.createElement('div');
+  linha.className = 'ux-etapa' + (etapa.atrasado ? ' atrasado' : (etapa.dataTermino ? ' ok' : ''));
+  const titulo = document.createElement('b');
+  titulo.textContent = (etapa.setor || 'Setor') + ' · ' + (etapa.prestadorNome || 'Sem prestador');
+  linha.appendChild(titulo);
+  linha.appendChild(selo(etapa.situacao));
+  linha.appendChild(paragrafo('Início ' + etapa.horaInicioTexto + ' · pausa ' + etapa.horaPausaTexto + ' · término ' + etapa.horaTerminoTexto));
+  linha.appendChild(paragrafo('Tempo útil ' + etapa.tempo));
+  if (String(etapa.tempo || '').indexOf(' de ') >= 0) {
+    const barra = document.createElement('div');
+    barra.className = 'ux-bar' + (etapa.atrasado ? ' atrasado' : '');
+    const marca = document.createElement('i');
+    marca.style.width = Math.max(0, Math.min(100, etapa.pct || 0)) + '%';
+    barra.appendChild(marca);
+    linha.appendChild(barra);
+  }
+  (etapa.pausasOperacao || []).forEach((pausa) => linha.appendChild(paragrafo('Pausa: ' + (pausa.outro || pausa.motivo || 'sem motivo'))));
+  (etapa.expediente || []).forEach(() => linha.appendChild(seloFim()));
+  (etapa.almoco || []).forEach(() => linha.appendChild(seloAlmoco()));
+  return linha;
+}
+
 function cartaoCarro(carro) {
   const bloco = document.createElement('article');
   bloco.className = 'ux-item';
@@ -327,13 +475,23 @@ function cartaoCarro(carro) {
 
 function selo(rotulo) {
   const el = document.createElement('span');
-  el.className = 'ux-selo';
+  const s = String(rotulo || '').toLowerCase();
+  let cor = '';
+  if (s === 'ativa' || s === 'ativo' || s === 'finalizado' || s === 'rascunho') cor = ' ok';
+  else if (s === 'arquivada' || s === 'cancelado' || s === 'revogado') cor = ' fim';
+  el.className = 'ux-selo' + cor;
   el.textContent = rotulo || '';
   return el;
 }
 
 function seloFim() {
   const el = selo('Fim de expediente');
+  el.classList.add('fim');
+  return el;
+}
+
+function seloAlmoco() {
+  const el = selo('Almoço/café');
   el.classList.add('fim');
   return el;
 }
@@ -352,6 +510,7 @@ function pintarPrestador() {
 function entrarDemonstracao() {
   dados = T.exemploLocal();
   filtro = { equipe: '', prestador: '', setor: '', situacao: '', busca: '' };
+  equipeAberta = '';
   estado.demonstracao = true;
   estado.situacao = '';
   estado.papel = 'gerente';
@@ -359,9 +518,9 @@ function entrarDemonstracao() {
   desenhar();
 }
 
-async function salvarSla(setor, horas) {
-  const prazo = Number(horas);
-  if (!prazo || prazo <= 0) { texto('st-empresa', 'Informe um prazo maior que zero.'); return; }
+async function salvarSla(setor, horas, minutos) {
+  const prazo = GestoesLogica().prazoDecimal(horas, minutos == null ? 0 : minutos);
+  if (prazo == null) { texto('st-empresa', 'Informe horas e minutos válidos.'); return; }
   if (estado.demonstracao) {
     dados.sla = dados.sla.map((item) => item.setor === setor ? { setor: setor, prazoHoras: prazo } : item);
     texto('st-empresa', T.ROTULO_EXEMPLO);
@@ -499,13 +658,14 @@ $('btn-sair-demo').addEventListener('click', () => {
   estado.papel = '';
   dados = null;
   filtro = { equipe: '', prestador: '', setor: '', situacao: '', busca: '' };
+  equipeAberta = '';
   if (estado.sessao) conferir();
   else desenhar();
 });
 $('busca-carro').addEventListener('input', () => { filtro.busca = $('busca-carro').value; desenhar(); });
 $('btn-demo-entrada').addEventListener('click', entrarDemonstracao);
 $('btn-demo-sql').addEventListener('click', entrarDemonstracao);
-$('btn-sair').addEventListener('click', sair);
+if ($('btn-sair')) $('btn-sair').addEventListener('click', sair);
 $('btn-sair-expirada').addEventListener('click', sair);
 $('btn-sair-temporario').addEventListener('click', sair);
 $('btn-sair-sql').addEventListener('click', sair);
